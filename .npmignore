@@ -1,0 +1,9 @@
+# Publish the CLI (bin/, src/) plus every objective folder at the repo root.
+# Only exclude dev/CI cruft; objective folders are NOT listed so they ship.
+.github/
+.git/
+*.log
+*.tgz
+.DS_Store
+.env
+node_modules/

@@ -1,0 +1,40 @@
+{
+  "name": "qa-ai-repo",
+  "version": "0.1.0",
+  "description": "Install reusable QA skills, agents, and MCP servers into Claude Code, Cursor, Windsurf, and other AI coding tools with one command.",
+  "type": "module",
+  "bin": {
+    "qa-ai": "bin/qa-ai.js",
+    "qa-ai-repo": "bin/qa-ai.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bin/qa-ai.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "qa",
+    "testing",
+    "ai",
+    "agents",
+    "skills",
+    "mcp",
+    "claude-code",
+    "cursor",
+    "windsurf",
+    "playwright",
+    "e2e"
+  ],
+  "author": "pnakhat",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pnakhat/qa-ai-repo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pnakhat/qa-ai-repo/issues"
+  },
+  "homepage": "https://github.com/pnakhat/qa-ai-repo#readme"
+}

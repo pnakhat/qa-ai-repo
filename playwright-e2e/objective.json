@@ -1,0 +1,4 @@
+{
+  "title": "Playwright E2E Testing",
+  "description": "Author resilient Playwright end-to-end tests (Page Object Model, fixtures, stable locators) and drive a live browser via the Playwright MCP server."
+}
