@@ -3,3 +3,8 @@ node_modules/
 .DS_Store
 .env
 *.tgz
+
+# Local install artifacts from testing `qa-ai-repo add ...` in this repo
+.claude/
+.cursor/
+.windsurf/
