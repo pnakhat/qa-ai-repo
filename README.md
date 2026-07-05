@@ -77,7 +77,8 @@ them.
 3. Create a GitHub Release (tag e.g. `v0.1.0`). The workflow smoke-tests the
    CLI and publishes; it skips automatically if that version is already on npm.
 
-To enable npm **provenance**, make the repo public and add `--provenance` to the
-publish step (the workflow already grants `id-token: write`).
+The workflow publishes with npm **provenance** (verified build attestation),
+enabled by `--provenance` + the `id-token: write` permission. This requires a
+public repo.
 
 **Manual.** `npm login` then `npm publish` from the repo root.
