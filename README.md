@@ -1,16 +1,29 @@
 # qa-ai-repo
 
-QA AI tooling — a home for my QA **skills**, **agents**, and **MCP** servers.
+QA AI tooling, organized **by objective**. Each QA objective gets its own
+top-level folder, containing only the `skills/`, `agents/`, and `mcp/` pieces
+that objective needs.
 
-## Structure
+## Layout
 
-| Directory | Purpose |
-|-----------|---------|
-| `skills/` | Reusable QA skills (Claude Code skills, prompt workflows) |
-| `agents/` | Agent definitions for QA tasks (test authoring, review, triage) |
-| `mcp/`    | MCP server configs and implementations for QA integrations |
+```
+qa-ai-repo/
+├── _template/            # copy this to start a new objective
+│   ├── skills/
+│   ├── agents/
+│   └── mcp/
+└── <objective-name>/     # e.g. checkout-regression, api-contract-tests
+    ├── README.md         # what this objective covers
+    ├── skills/           # (optional) skills for this objective
+    ├── agents/           # (optional) agents for this objective
+    └── mcp/              # (optional) MCP servers/configs
+```
 
-## Usage
+## Add a new objective
 
-Add each skill/agent/MCP in its own subdirectory with a short README describing
-what it does and how to wire it up.
+```bash
+cp -r _template my-new-objective
+# edit my-new-objective/README.md, drop any subfolders you don't need
+```
+
+Only keep the `skills/` / `agents/` / `mcp/` folders an objective actually uses.
