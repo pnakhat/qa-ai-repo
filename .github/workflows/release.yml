@@ -1,0 +1,50 @@
+name: Release
+
+# Publishes to npm when you cut a GitHub Release (or trigger manually).
+# Requires a repo secret named NPM_TOKEN — an npm "Automation" access token:
+#   npm.com → Access Tokens → Generate → Automation, then add it at
+#   Settings → Secrets and variables → Actions → New repository secret.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # enables npm provenance on public repos
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      # No runtime deps and no lockfile, so nothing to install — just smoke-test
+      # that the CLI loads before we publish.
+      - name: Smoke test CLI
+        run: |
+          node bin/qa-ai.js --version
+          node bin/qa-ai.js list
+
+      - name: Skip if version already published
+        id: check
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VER" version >/dev/null 2>&1; then
+            echo "$NAME@$VER already on npm — skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: steps.check.outputs.publish == 'true'
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

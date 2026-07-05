@@ -65,5 +65,19 @@ npm link                            # then `qa-ai list` works anywhere
 
 ## Publishing
 
-Bump `version` in `package.json`, then `npm publish`. Objective folders ship
-automatically (see `.npmignore`); no need to enumerate them.
+Objective folders ship automatically (see `.npmignore`); no need to enumerate
+them.
+
+**Automated (recommended).** A GitHub Actions workflow
+(`.github/workflows/release.yml`) publishes to npm whenever you cut a Release:
+
+1. Add a repo secret `NPM_TOKEN` (an npm *Automation* access token):
+   Settings → Secrets and variables → Actions → New repository secret.
+2. Bump `version` in `package.json` and commit.
+3. Create a GitHub Release (tag e.g. `v0.1.0`). The workflow smoke-tests the
+   CLI and publishes; it skips automatically if that version is already on npm.
+
+To enable npm **provenance**, make the repo public and add `--provenance` to the
+publish step (the workflow already grants `id-token: write`).
+
+**Manual.** `npm login` then `npm publish` from the repo root.
