@@ -1,0 +1,4 @@
+{
+  "title": "Full-Stack Test Pyramid Strategy",
+  "description": "Analyze an application end to end — frontend, backend, and middleware — and produce a complete test pyramid: exactly what to test at each layer and each level (unit, integration/component, contract, E2E), where each behavior belongs, and which tools to use."
+}
