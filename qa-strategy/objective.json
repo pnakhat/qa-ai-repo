@@ -1,0 +1,4 @@
+{
+  "title": "QA Strategy",
+  "description": "Interview a team about its product, tech stack, size, and release cadence, then generate a tailored, risk-based QA strategy with an automation plan, quality gates, tooling, and a phased rollout."
+}
