@@ -1,0 +1,4 @@
+{
+  "title": "Jest Coverage & Mutation Testing",
+  "description": "Measure how good your unit tests actually are — set up Jest code coverage, then Stryker mutation testing to prove the tests catch real bugs (not just execute lines). Interpret mutation score, kill survived mutants, and gate CI on both."
+}
