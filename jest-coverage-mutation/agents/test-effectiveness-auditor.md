@@ -26,6 +26,30 @@ actually catch bugs — and make them do so — using coverage plus mutation tes
    `break` threshold and wire coverage + mutation gates into CI (mutation on
    changed files for PRs, full run nightly).
 
+## Guardrails
+
+Hard rules — violating any of these is a failed audit, not a judgment call:
+
+- **Never game the score.** Do not delete or exclude mutators, narrow `mutate`
+  globs onto already-green files, or remove/skip tests to lift the number. Scope
+  by risk, not by what is convenient to make pass.
+- **Report the mutation score, not just coverage %.** "100% coverage" is never
+  the headline. Coverage is the floor; the mutation score is the quality bar.
+- **Every fix must kill a specific mutant.** Name the survivor (file:line, the
+  mutation, e.g. `>` → `>=`) and the assertion you added that now distinguishes
+  it. No blanket "added more tests" — tie each fix to a mutant that flipped from
+  Survived to Killed.
+- **Assertions on values, not "no throw".** A test that calls a function without
+  asserting on its output/effect does not count, even at 100% coverage.
+- **Scope mutation to high-risk logic — don't mutate the whole repo per PR.** Use
+  `coverageAnalysis: perTest`, scoped `mutate` globs, `--since` and `--incremental`
+  on PRs; reserve the full-repo run for nightly.
+- **Set a `break` threshold as the CI gate.** The audit isn't done until Stryker
+  exits non-zero below an agreed floor and both coverage + mutation are wired as
+  required checks. Ratchet the floor up over time; never lower it to pass.
+- **NoCoverage is a coverage bug, not a mutation bug.** Fix it with a test that
+  exercises the path before re-scoring; don't conflate it with survivors.
+
 ## Principles
 
 - Report the **mutation score**, not just coverage % — coverage is the floor.

@@ -9,7 +9,8 @@ Design testing for an application **as a whole system of layers**, not one suite
 The goal: every behavior is tested at the **lowest level that can meaningfully
 verify it**, seams are covered by **contract tests**, and only a handful of
 journeys reach **end-to-end**. See `layer-test-matrix.md` for the full
-layer × level grid of what to test and which tools to use.
+layer × level grid of what to test and which tools to use, and `reference.md`
+for a runnable example test at every level (plus a "push a test down" before/after).
 
 ## Method
 
@@ -59,6 +60,42 @@ layer × level grid of what to test and which tools to use.
   circuit breakers, and idempotency.
 - **Cross-cutting (top):** a small set of full E2E journeys, plus performance/
   load (k6) and security (SAST/DAST) as their own tracks.
+
+## Anti-patterns — smells to reject
+
+| ❌ Smell | ✅ Fix |
+|---------|--------|
+| Inverted pyramid / "ice-cream cone" — mostly slow E2E, few units | Rebuild the base: push each E2E down to a component, integration, or contract test |
+| A backend business rule (pricing, credit limit, validation) asserted by driving the browser | Test the rule as a **BE unit** test; let the FE component test only prove the UI *renders* the result |
+| Every edge case of one behavior covered by a separate E2E | Cover edge cases at unit level; keep **one** E2E for the happy journey |
+| Two layers each re-tested end-to-end to prove they agree | One **contract test** at the seam (Pact / OpenAPI / AsyncAPI) |
+| Mocking the system under test (e.g. stubbing `orders-svc` in an `orders-svc` integration test) | Mock only what you *don't* own; use a real DB/broker via Testcontainers |
+| Same behavior tested at three levels "to be safe" — duplicate coverage | Assign it to the **one** lowest level that can prove it; delete the rest |
+| Unit tests that mock everything and assert implementation details (call counts, internal state) | Test observable behavior — inputs → outputs, what the user sees |
+| Integration tests hitting shared staging DBs or live third-party APIs | Ephemeral containers (Testcontainers/LocalStack) + WireMock for third parties |
+| E2E used as the only check on a seam between two services you own | Consumer + provider **contract**; reserve E2E for full-journey coverage |
+| "Component" tests that spin up the real backend | Mock the network (MSW) — the backend is proved in its own suite |
+
+## CI wiring
+
+Run the fast, deterministic base on every change and reserve slow, broad suites for later
+stages. Each layer earns its place in the pipeline by speed and blast radius.
+
+| Stage | Runs | Rationale | Gate |
+|-------|------|-----------|------|
+| **Pre-commit** (hook) | Changed-file **unit** tests, lint, typecheck | Sub-second feedback; catch typos/logic before push | Local only |
+| **PR / pull request** | Full **unit** + **component/integration** (Testcontainers) + **consumer contracts** (publish pacts) | The bulk of coverage; fast enough to block merge | **Required check — blocks merge** |
+| **Merge / main** | **Provider contract verification** against published pacts + smoke E2E | Confirms both sides of every seam still agree before it lands | **Required — revert on red** |
+| **Nightly / scheduled** | Full **E2E** suite, performance/load (k6), security (SAST/DAST), full a11y | Slow, broad, environment-heavy; not needed per-PR | Alert on failure; triage next morning |
+
+- **Merge gates:** PR unit+integration+contract must be green; provider verification must
+  pass before a consumer's contract-changing PR merges (use a Pact broker's `can-i-deploy`).
+- **Zero retries on main.** Retries hide flakes; a retried green is a bug to fix, not pass.
+- **Fail fast, cheap first:** order stages unit → integration → contract → E2E so the
+  cheapest signal blocks earliest and the expensive suites only run once the base is green.
+- **Parallelize by layer/shard** to keep the PR stage under a few minutes as the suite grows.
+- **Publish contracts on PR, verify on merge:** consumers publish pacts tagged with the
+  branch; providers verify them so a breaking API change fails *before* it ships.
 
 ## Principles
 

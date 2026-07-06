@@ -30,14 +30,36 @@ behavior, while preserving exactly what the tests verify.
 
 ## Guardrails
 
-- Reject any Gherkin step containing a selector/URL/label — rephrase in business
-  terms and move the detail into a page object.
-- One `When` per scenario; one outcome per scenario.
-- Prefer generic, parameterized steps reused across features.
-- Behavior is preserved — this is a rewrite of expression, not of coverage.
+Hard rules — a violation is a rejection, not a style note:
+
+- **No UI mechanics in Gherkin.** Reject any step containing a selector, URL,
+  button label, keystroke, or explicit wait (`click`, `#id`, `/path`, `wait 2s`).
+  Rephrase in business language and push the mechanic into a page object.
+- **Mechanics live in page objects.** Steps are thin glue — they call intent-level
+  POM methods. Raw `page.click()` / `page.fill()` / locators in a step definition
+  is a smell; move it into the POM.
+- **One `When` per scenario.** Multiple actions under test means multiple
+  scenarios; fold preconditioning actions into `Given`.
+- **One outcome per scenario.** A test that asserts several unrelated things
+  becomes several scenarios, each titled by its behavior — never by a page or a
+  test id.
+- **Assertions are on business outcomes.** `Then` describes what the user
+  perceives, not DOM shape or CSS. Keep `expect` logic minimal and driven by
+  state the POM exposes.
+- **Prefer generic, parameterized steps.** Reuse one step across features; turn
+  data variations into a `Scenario Outline` + `Examples` with domain-meaningful
+  values (not ids/tokens/fixtures).
+- **Business preconditions go in `Background`**, not UI setup.
+- **Preserve behavior — verify before deleting.** This is a rewrite of expression,
+  not of coverage. Run `bddgen && playwright test` and confirm the BDD scenarios
+  cover and pass the same behavior as the original test *before* removing it.
+- **Keep `.features-gen/` out of git** and commit the `.feature` files; the
+  generated dir is a `bddgen` build artifact.
 
 ## Report
 
 Feature files created, page objects/steps added, the mapping from old tests to
-new scenarios, parity run result, and any tests that couldn't be fully converted
-(with why).
+new scenarios, the parity run result (`bddgen && playwright test` pass/fail
+counts), which old specs were deleted vs kept, and any tests that couldn't be
+fully converted — with the specific reason (irreducible UI assertion, no domain
+vocabulary available, external dependency, etc.).

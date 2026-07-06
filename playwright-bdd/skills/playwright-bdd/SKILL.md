@@ -64,3 +64,37 @@ method. If a non-engineer can't read the scenario, it's wrong.
 - **Thin glue, rich page objects** — behavior lives in POMs; steps just wire.
 - **One outcome per scenario**; use `Background` for shared context.
 - **Preserve behavior** — BDD is a rewrite of expression, not of coverage.
+
+## Anti-patterns — smells to reject
+
+| ❌ Smell | ✅ Fix |
+|---------|--------|
+| `When I click "#login-btn"` / selector in `.feature` | `When she signs in` — move the selector into a page object |
+| `Given I go to "/admin/users?role=2"` | `Given an administrator is managing users` — URLs live in the POM |
+| `Then "#total" has text "$90"` — label/DOM in prose | `Then she is charged the discounted total` |
+| `When I wait 2 seconds` | Drop it — waits are auto-retrying assertions inside the POM |
+| Click-by-click imperative scenario (fill, click, fill, click) | Collapse into one intent step: `When she completes checkout` |
+| Multiple `When`s in one scenario | Split into multiple scenarios, or fold setup actions into `Given` |
+| Scenario titled `"Cart page"` or `"checkout-btn works"` | Title by behavior: `"Discount applied for gold members"` |
+| `Examples` table full of ids/tokens (`sku_88a1`, `usr_02`) | Use domain values: tier `gold`, order `$100`, total `$90` |
+| `expect(...)` assertion logic written in a step definition | Assert a state the POM exposes; keep mechanics in the page object |
+| One step hard-coded to one email/user | Parameterize: `Given a "<tier>" member` + `Examples` |
+| `.feature` named after a page (`cart-page.feature`) | Name after the capability (`checkout.feature`, `refunds.feature`) |
+
+## CI wiring
+
+- **Generate then run** — the pipeline step is `bddgen && playwright test`; the
+  committed `"test:bdd"` script (`"bddgen && playwright test"`) is what CI invokes.
+  `bddgen` must run first every time — it regenerates the runnable specs from the
+  current `.feature` + step files.
+- **Keep `.features-gen/` out of git.** It's a build artifact regenerated on every
+  run; add it to `.gitignore`. Commit the `.feature` files instead — they *are*
+  the living behavior docs the business reads and reviews in PRs.
+- **Tag-filter for speed.** Run the smoke subset in pre-deploy pipelines:
+  `bddgen --tags "@smoke" && playwright test`; run the full suite on PRs.
+- **Publish behavior docs.** Enable a Cucumber/HTML reporter via `defineBddConfig`
+  so each run emits a human-readable report of scenarios — this is the artifact
+  non-engineers actually consume. Upload it as a CI artifact on both pass and fail.
+- **Fail the build on undefined/ambiguous steps.** `bddgen` errors when a Gherkin
+  step has no matching definition — treat that as a hard failure, not a warning,
+  so drift between `.feature` files and steps can't merge.

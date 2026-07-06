@@ -1,4 +1,4 @@
 {
   "title": "API Contract Testing",
-  "description": "Catch breaking API changes before they ship — consumer-driven contracts (Pact) and spec-first validation (OpenAPI/Schemathesis/Dredd), with provider verification and can-i-deploy gates wired into CI."
+  "description": "Catch breaking API changes before they ship — consumer-driven contracts (Pact) and spec-first validation (OpenAPI/Schemathesis/Dredd/oasdiff), across REST, GraphQL, and event/message boundaries. Enforces guardrails that reject exact-value matching in favour of type/shape matchers, require every pact and spec to carry a version + git sha, replace shared fixtures with per-interaction provider states, and treat any backward-incompatible change as a versioned breaking change. Wires provider verification, breaking-change diffs, and blocking can-i-deploy / record-deployment gates into CI so an incompatible release is stopped, not merely reported."
 }

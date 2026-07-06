@@ -48,7 +48,24 @@ Generate the runnable specs, then run:
 npx bddgen && npx playwright test      # bddgen writes .features-gen/, then Playwright runs it
 ```
 
-Add a script: `"test:bdd": "bddgen && playwright test"`.
+Add a `package.json` script so CI and humans run it the same way:
+
+```json
+{
+  "scripts": {
+    "test:bdd": "bddgen && playwright test"
+  }
+}
+```
+
+**Gitignore the generated specs.** `.features-gen/` is a build artifact — `bddgen`
+rewrites it on every run. Commit the `.feature` files (they're the behavior docs);
+ignore the generated output:
+
+```gitignore
+# .gitignore
+.features-gen/
+```
 
 ## Fixtures — bind page objects to steps
 

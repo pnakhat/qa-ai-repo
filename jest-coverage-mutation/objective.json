@@ -1,4 +1,4 @@
 {
   "title": "Jest Coverage & Mutation Testing",
-  "description": "Measure how good your unit tests actually are — set up Jest code coverage, then Stryker mutation testing to prove the tests catch real bugs (not just execute lines). Interpret mutation score, kill survived mutants, and gate CI on both."
+  "description": "Measure how good your unit tests actually are — set up Jest code coverage, then Stryker mutation testing to prove the tests catch real bugs (not just execute lines). Interpret mutation score, kill survived mutants, and gate CI on both. Enforces guardrails against coverage theater: no assertion-free tests, no gaming the score by excluding mutators or files, every fix must kill a specific survived mutant, mutation is scoped to high-risk logic (changed-code on PRs, full run nightly), and CI is gated on a Stryker break threshold — not coverage % alone."
 }

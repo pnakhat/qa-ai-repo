@@ -1,4 +1,4 @@
 {
   "title": "Full-Stack Test Pyramid Strategy",
-  "description": "Analyze an application end to end — frontend, backend, and middleware — and produce a complete test pyramid: exactly what to test at each layer and each level (unit, integration/component, contract, E2E), where each behavior belongs, and which tools to use."
+  "description": "Analyze an application end to end — frontend, backend, and middleware — and produce a complete test pyramid: exactly what to test at each layer and each level (unit, integration/component, contract, E2E), where each behavior belongs, and which tools to use. Enforces guardrails that assign every behavior to the lowest effective level, cover each seam with a contract instead of an E2E, keep backend rules out of the UI, forbid mocking the system under test and duplicate cross-layer coverage, and hold E2E to a justified handful — with runnable per-level example tests and CI wiring (which suite runs at pre-commit / PR / merge / nightly, and which stages gate merges)."
 }
