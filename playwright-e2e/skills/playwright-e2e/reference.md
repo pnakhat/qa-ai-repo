@@ -168,7 +168,7 @@ up preconditions — faster and more stable:
 test('displays a previously placed order', async ({ page, request }) => {
   const order = await request.post('/api/orders', {
     data: { items: [{ sku: 'SKU-001', qty: 1 }] },
-    headers: { Authorization: `****** },
+    headers: { Authorization: 'Bearer ' + process.env.API_TOKEN },
   });
   const { id } = await order.json();
 

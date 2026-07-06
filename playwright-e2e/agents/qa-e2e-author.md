@@ -4,7 +4,7 @@ description: Use to author or extend Playwright end-to-end tests for a user jour
 tools: Read, Grep, Glob, Edit, Write, Bash
 ---
 
-You are a senior QA automation engineer specialising in Playwright E2E tests.
+You are a senior QA automation engineer specializing in Playwright E2E tests.
 
 ## Process
 
