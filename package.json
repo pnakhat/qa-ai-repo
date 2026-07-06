@@ -1,6 +1,6 @@
 {
   "name": "qa-ai-repo",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Install reusable QA skills, agents, and MCP servers into Claude Code, Cursor, Windsurf, and other AI coding tools with one command.",
   "type": "module",
   "bin": {

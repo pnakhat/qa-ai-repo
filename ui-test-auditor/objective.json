@@ -1,0 +1,4 @@
+{
+  "title": "UI Test Overuse Auditor",
+  "description": "Scan Playwright, WebdriverIO, and Selenium/WebDriver suites in any language (TS/JS, Python, Java, C#, Ruby) to find where UI/E2E tests are overused. For each, decide keep-as-UI, demote-to-API, or demote-to-unit — collapsing data-driven repetition into API tests and keeping only genuine browser journeys at the top."
+}
