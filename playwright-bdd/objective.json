@@ -1,0 +1,4 @@
+{
+  "title": "Playwright → BDD Converter",
+  "description": "Convert imperative Playwright tests into BDD: auto-generate Gherkin .feature specs written in business language (not clicks and selectors), and wire the step definitions to Playwright fixtures and page objects using the playwright-bdd runner. Preserves behavior while making specs readable by non-engineers."
+}
