@@ -1,4 +1,4 @@
 {
   "title": "Playwright E2E Testing",
-  "description": "Author resilient Playwright end-to-end tests (Page Object Model, fixtures, stable locators) and drive a live browser via the Playwright MCP server."
+  "description": "Author and maintain resilient Playwright end-to-end tests using the Page Object Model, fixtures, stable user-facing locators, and web-first assertions. Enforces guardrails against flakiness, brittle selectors, and shared state. Includes a live-browser Playwright MCP server for inspecting and verifying user journeys before writing tests."
 }
