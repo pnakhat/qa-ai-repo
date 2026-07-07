@@ -1,0 +1,4 @@
+{
+  "title": "Performance Testing",
+  "description": "Prove a system meets its speed and scale targets under realistic load — backend load, stress, soak, and spike testing with k6, and frontend web-vitals with Lighthouse. Defines SLOs (p95/p99 latency, error rate, throughput/RPS, and LCP/INP/CLS) FIRST, models a workload from real traffic with think time and ramp stages, then expresses every threshold as a pass/fail CI gate so a regression blocks the pipeline instead of being noticed in production. Always reports percentiles, never averages, because an average hides the slow tail that users actually feel. Enforces guardrails against averages-over-percentiles, zero-think-time hammering, testing an under-provisioned or localhost environment and extrapolating to production, drawing a trend from a single run, and chasing latency while ignoring the error rate at load."
+}

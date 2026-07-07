@@ -121,3 +121,15 @@ block is a suggestion. See `reference.md` for copy-pasteable gate definitions.
 - `strategy-template.md` — the structure of the delivered strategy document.
 - `reference.md` — risk-scoring rubric, metric formulas, quality-gate examples,
   and a worked mini-example strategy.
+
+## Works well with
+
+The strategy names metrics and gates; these objectives make them real. None is a
+hard dependency.
+
+- **`flaky-test-triage`** — turns the flake-rate metric this strategy gates on
+  into an actual detect → quantify → quarantine → fix workflow.
+- **`performance-testing`** — turns non-functional/perf SLOs into runnable k6 and
+  Lighthouse thresholds that gate the pipeline.
+- **`test-pyramid`** — operationalizes the "rebalance to a pyramid" recommendation
+  into a per-layer plan with example tests.

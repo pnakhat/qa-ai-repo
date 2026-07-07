@@ -107,3 +107,14 @@ stages. Each layer earns its place in the pipeline by speed and blast radius.
 - **Isolation + speed at the base**, realism concentrated at the seams, breadth
   only at the tip.
 - **Right-size to risk:** put the extra depth on revenue/safety-critical flows.
+
+## Works well with
+
+These objectives plug into the pyramid you design; none is a hard dependency.
+
+- **`flaky-test-triage`** — pushing logic down (the core pyramid move) removes
+  most E2E flake; whatever still flakes gets root-caused there, not retried.
+- **`performance-testing`** — performance is its own layer above the pyramid; run
+  it nightly/pre-release rather than per-commit.
+- **`api-contract-testing`** — the contract level of the pyramid; verify each seam
+  with a contract instead of an integration E2E.

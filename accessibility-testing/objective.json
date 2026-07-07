@@ -1,0 +1,4 @@
+{
+  "title": "Accessibility Testing",
+  "description": "Test web UIs for accessibility to WCAG 2.2 AA using both automation and the manual checks automation can't perform. Wires axe-core (`@axe-core/playwright`, `jest-axe`, `cypress-axe`) in as a fixture- and component-level assertion, then adds the human review that catches the rest: keyboard-only navigation, focus management and order, screen-reader semantics (roles, names, states), and meaningful accessible names. Automated tooling reliably catches only ~30–40% of real accessibility issues, so an axe pass is a floor, never a certificate. Enforces guardrails against `aria-label` spam, div-soup with role hacks, disabling axe rules to go green, and treating a clean axe run as full accessibility coverage. See the skill's `reference.md` for working setup code, rule/tag config, contrast thresholds, and a copy-pasteable manual checklist."
+}

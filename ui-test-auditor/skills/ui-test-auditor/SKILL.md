@@ -92,3 +92,14 @@ Then open each hit and apply the classification rubric in `detection-signals.md`
 - **Rank by payoff**: slowest/flakiest/most-duplicated UI tests first.
 - **Language-agnostic**: the same rubric applies whether the suite is TS, Python,
   Java, C#, or Ruby — only the syntax of the markers differs.
+
+## Works well with
+
+These objectives complement the audit; none is a hard dependency.
+
+- **`flaky-test-triage`** — over-broad UI tests flake the most; demoting them per
+  this audit often makes the flake disappear, and what remains gets triaged there.
+- **`visual-regression`** — a screenshot is a UI-level tool; don't snapshot what a
+  unit or API test should assert. Keep visual coverage where it belongs after a demotion.
+- **`accessibility-testing`** — a11y assertions also belong at the right level:
+  one browser smoke, with the rest pushed to component/unit checks.

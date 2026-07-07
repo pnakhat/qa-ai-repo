@@ -127,3 +127,12 @@ verification with provider states, publish + `can-i-deploy` + `record-deployment
 commands, a spec-first path (Spectral / Schemathesis / oasdiff), message-pact and
 AsyncAPI event snippets, and a complete GitHub Actions workflow wiring the gates.
 See `tooling.md` for language-specific tools and when to use each.
+
+## Works well with
+
+These objectives extend contract coverage; neither is a hard dependency.
+
+- **`performance-testing`** — load-, stress-, and soak-test the very endpoints
+  whose request/response contracts you pinned here, so shape *and* speed are guaranteed.
+- **`test-pyramid`** — contracts are the seam layer of the pyramid; use them to
+  replace slow cross-service E2E rather than duplicating coverage at the tip.

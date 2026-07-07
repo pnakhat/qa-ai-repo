@@ -99,3 +99,14 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 - `--headed --debug` — step through with the Playwright Inspector.
 - `PWDEBUG=1` — pause on the first `await page.pause()` call in the test.
 - Use the Playwright MCP server to interactively navigate the live app and discover locators before writing the spec.
+
+## Works well with
+
+These objectives build on the same runner and fixtures; none is a hard dependency.
+
+- **`flaky-test-triage`** — when a spec flakes, triage the root cause (waiting,
+  isolation, unmocked third parties) instead of reaching for `retries`.
+- **`visual-regression`** — add `toHaveScreenshot` to journeys you already have
+  specs for; they reuse the storage-state auth and seeded data for determinism.
+- **`accessibility-testing`** — drop `AxeBuilder`/`checkA11y` in as a
+  fixture-level assertion on key pages so a11y regressions block the same suite.
