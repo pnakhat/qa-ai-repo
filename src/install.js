@@ -3,7 +3,7 @@
 // user's project), except Windsurf's MCP config which is global.
 
 import {
-  existsSync, readFileSync, writeFileSync, mkdirSync, cpSync,
+  existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, readdirSync, statSync,
 } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
@@ -87,6 +87,50 @@ function relForLog(abs) {
   return abs.startsWith(cwd) ? abs.slice(cwd.length + 1) : abs;
 }
 
+// ---- skill sibling files -------------------------------------------------
+// A SKILL.md routinely points at siblings in its own directory (reference.md,
+// tooling.md, templates). Claude Code gets them for free because it copies the
+// whole directory; every other adapter rebuilds a single file from SKILL.md and
+// used to drop them, leaving the installed rule pointing at a file that was
+// never written. These helpers carry the siblings along.
+//
+// They land in a per-skill subdirectory rather than beside the rule because
+// nearly every objective ships a file called `reference.md`, so a flat copy
+// would have them overwrite each other.
+
+function skillSiblings(objective, skillName) {
+  const dir = join(objective.dir, 'skills', skillName);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((f) => f !== 'SKILL.md');
+}
+
+// Point `reference.md` / [text](reference.md) at the subdirectory we copy into.
+function rewriteSiblingLinks(text, skillName, siblings) {
+  let out = text || '';
+  for (const f of siblings) {
+    out = out.split('`' + f + '`').join('`' + skillName + '/' + f + '`');
+    out = out.split('(' + f + ')').join('(' + skillName + '/' + f + ')');
+  }
+  return out;
+}
+
+// Agents reference skill files by their Claude Code path (.claude/skills/<skill>/x.md).
+// Other tools keep those files elsewhere (see copySiblings), so repoint the prefix.
+function readAgent(objective, agentFile, skillsPrefix) {
+  const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
+  return { data, body: body.split('.claude/skills/').join(skillsPrefix) };
+}
+
+function copySiblings(ctx, objective, skillName, destDir) {
+  const dir = join(objective.dir, 'skills', skillName);
+  for (const f of skillSiblings(objective, skillName)) {
+    const src = join(dir, f);
+    const dest = join(destDir, skillName, f);
+    if (statSync(src).isDirectory()) copyDir(ctx, src, dest);
+    else ensureWrite(ctx, dest, readFileSync(src, 'utf8'));
+  }
+}
+
 // ---- tool adapters -------------------------------------------------------
 // Each adapter maps the three kinds into the files a given tool consumes.
 
@@ -94,7 +138,8 @@ function readSkill(objective, skillName) {
   const skillMd = join(objective.dir, 'skills', skillName, 'SKILL.md');
   const raw = existsSync(skillMd) ? readFileSync(skillMd, 'utf8') : '';
   const { data, body } = parseFrontmatter(raw);
-  return { skillMd, raw, data, body };
+  const siblings = skillSiblings(objective, skillName);
+  return { skillMd, raw, siblings, data, body };
 }
 
 const adapters = {
@@ -117,12 +162,16 @@ const adapters = {
   cursor: {
     label: 'Cursor',
     skill(ctx, objective, skillName) {
-      const { data, body } = readSkill(objective, skillName);
-      ensureWrite(ctx, join(ctx.cwd, '.cursor', 'rules', `${skillName}.mdc`), toMdc(data, body));
+      const { data, body, siblings } = readSkill(objective, skillName);
+      const rulesDir = join(ctx.cwd, '.cursor', 'rules');
+      const desc = rewriteSiblingLinks(data.description, skillName, siblings);
+      ensureWrite(ctx, join(rulesDir, `${skillName}.mdc`),
+        toMdc({ ...data, description: desc }, rewriteSiblingLinks(body, skillName, siblings)));
+      copySiblings(ctx, objective, skillName, rulesDir);
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
+      const { data, body } = readAgent(objective, agentFile, '');
       ensureWrite(ctx, join(ctx.cwd, '.cursor', 'rules', `${name}.mdc`), toMdc(data, body));
     },
     mcp(ctx, objective, mcpFile) {
@@ -135,13 +184,17 @@ const adapters = {
   windsurf: {
     label: 'Windsurf',
     skill(ctx, objective, skillName) {
-      const { data, body } = readSkill(objective, skillName);
-      const md = `# ${data.name || skillName}\n\n${data.description || ''}\n\n${body.trim()}\n`;
-      ensureWrite(ctx, join(ctx.cwd, '.windsurf', 'rules', `${skillName}.md`), md);
+      const { data, body, siblings } = readSkill(objective, skillName);
+      const rulesDir = join(ctx.cwd, '.windsurf', 'rules');
+      const desc = rewriteSiblingLinks(data.description, skillName, siblings);
+      const text = rewriteSiblingLinks(body, skillName, siblings);
+      ensureWrite(ctx, join(rulesDir, `${skillName}.md`),
+        `# ${data.name || skillName}\n\n${desc || ''}\n\n${text.trim()}\n`);
+      copySiblings(ctx, objective, skillName, rulesDir);
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
+      const { data, body } = readAgent(objective, agentFile, '');
       const md = `# ${data.name || name}\n\n${data.description || ''}\n\n${body.trim()}\n`;
       ensureWrite(ctx, join(ctx.cwd, '.windsurf', 'rules', `${name}.md`), md);
     },
@@ -156,12 +209,18 @@ const adapters = {
   agents: {
     label: 'AGENTS.md (generic)',
     skill(ctx, objective, skillName) {
-      const { data, body } = readSkill(objective, skillName);
-      appendAgentsMd(ctx, data.name || skillName, data.description, body);
+      const { data, body, siblings } = readSkill(objective, skillName);
+      // AGENTS.md is one flat file, so siblings get their own directory next to it.
+      const refDir = join(ctx.cwd, '.qa-ai');
+      const rewrite = (t) => rewriteSiblingLinks(t, skillName, siblings)
+        .split(`\`${skillName}/`).join(`\`.qa-ai/${skillName}/`)
+        .split(`(${skillName}/`).join(`(.qa-ai/${skillName}/`);
+      appendAgentsMd(ctx, data.name || skillName, rewrite(data.description), rewrite(body));
+      copySiblings(ctx, objective, skillName, refDir);
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
+      const { data, body } = readAgent(objective, agentFile, '.qa-ai/');
       appendAgentsMd(ctx, data.name || name, data.description, body);
     },
     mcp(ctx, objective, mcpFile) {

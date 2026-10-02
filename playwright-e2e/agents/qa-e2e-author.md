@@ -1,7 +1,10 @@
 ---
 name: qa-e2e-author
 description: Use to author or extend Playwright end-to-end tests for a user journey. Give it the flow to cover; it produces Page Object Model specs with stable locators, web-first assertions, fixture-based isolation, and storage-state auth — and can drive a live browser via the Playwright MCP server to inspect the real UI before writing tests.
-tools: Read, Grep, Glob, Edit, Write, Bash
+# No `tools:` allowlist on purpose. An explicit list excludes the
+# mcp__playwright__* tools, and this agent is instructed to drive the live
+# app via the Playwright MCP server this objective installs. Omitting the
+# field inherits every available tool, MCP servers included.
 skills: playwright-e2e
 ---
 
