@@ -160,6 +160,9 @@ def test_rag_answer():
 - **Set the threshold from measured baseline + a margin**, not a round number.
   Score the current system first; gate a little below it so normal variance doesn't
   flap but a real drop fails.
+- **State the direction on every threshold.** Comment each one *minimize*
+  (`<= threshold`) or *maximize* (`>= threshold`) so nobody misreads a
+  hallucination gate as high-is-good.
 - **Report the distribution, not one number.** Run the whole golden set and read
   the pass rate and the low-scoring cases; a 0.82 average can hide five 0.3s. Don't
   average unrelated metrics into a single "quality score" — that hides exactly the

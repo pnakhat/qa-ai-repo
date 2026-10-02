@@ -86,7 +86,7 @@ Then open each hit and apply the classification rubric in `detection-signals.md`
 
 - **Keep the reason, not the coverage.** If a test's assertion is about data, it
   belongs at the API; only browser-specific behavior justifies a UI test.
-- **One happy path per journey at the UI**, exhaustive variations at the API/unit level.
+- **One happy path per journey at the UI**, exhaustive variations at the API/unit level. Never demote a journey's last browser test to zero — keep one smoke that proves the wiring renders.
 - **Don't delete coverage — relocate it.** Every demotion recommendation names the
   API endpoint or unit under test that should now carry it.
 - **Rank by payoff**: slowest/flakiest/most-duplicated UI tests first.

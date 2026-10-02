@@ -68,8 +68,9 @@ usage in a consumer test.
   business flows. Keep each interaction small and deterministic.
 - **Match on type/shape, not brittle exact values** (except enums/status codes
   that are genuinely part of the contract).
-- **Version everything** — pacts and specs are tied to a service version + sha
-  so `can-i-deploy` can reason about environments.
+- **Version everything** — pacts and specs are tied to a service version + sha,
+  and no provider verification runs without a `providerVersion`, so
+  `can-i-deploy` can reason about environments.
 - **Backward compatibility is the rule**: additive changes are safe; removing a
   field, tightening a type, or changing status codes is breaking — version it.
 - **Provider states** replace shared fixtures — each interaction declares the

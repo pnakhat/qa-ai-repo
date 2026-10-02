@@ -91,7 +91,7 @@ See `reference.md` for precise formulas.
 | Coverage % with no CI gate behind it | Every metric gets a threshold and a consequence |
 | Ice-cream-cone suite (mostly slow E2E) | Rebalance to a pyramid; push logic down to unit/integration |
 | "Add more tests everywhere" (uniform effort) | Concentrate on likelihood × impact top tier |
-| Testing theater: green suite, bugs still escape | Track escape rate; assert on real user outcomes |
+| Testing theater: green suite, bugs still escape | Track escape rate; prefer mutation score over raw coverage; assert on real user outcomes |
 | Recommending tools the stack can't run | Respect the existing stack; justify any change |
 | `retries: 3` / manual re-runs to hide flake | Measure flake rate; quarantine + fix root cause |
 | Roadmap of aspirations with no owner/metric | Concrete first steps with an owner and a success metric |

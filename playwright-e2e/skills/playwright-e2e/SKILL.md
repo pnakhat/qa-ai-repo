@@ -35,7 +35,7 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 ## Waiting — assertions, never sleeps
 
 - Use Playwright's **web-first, auto-retrying assertions**: `await expect(locator).toBeVisible()`, `.toHaveText()`, `.toHaveValue()`, `.toHaveURL()`.
-- **Never** call `page.waitForTimeout()` — it hard-codes a delay that will be wrong under load or on slow CI, and it's a flakiness factory.
+- **Never** call `page.waitForTimeout()` (or sleep via `setTimeout`) — it hard-codes a delay that will be wrong under load or on slow CI, and it's a flakiness factory.
 - For a specific condition without an assertion use `locator.waitFor({ state: 'visible' })` or `page.waitForResponse(/api\/orders/)` with a meaningful condition.
 - Increase `timeout` on a specific assertion for genuinely slow operations; do not increase the global default to mask problems.
 
