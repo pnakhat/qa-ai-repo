@@ -41,6 +41,12 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,   // 1 retry on CI only — fix flakes, don't hide them
   workers: process.env.CI ? 4 : undefined,
   reporter: [['html'], ['github']],
+  // Starts the app under test; skipped when BASE_URL points at a deployed env.
+  webServer: process.env.BASE_URL ? undefined : {
+    command: 'npm run dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: !process.env.CI,
+  },
   use: {
     baseURL: process.env.BASE_URL ?? 'http://localhost:3000',
     trace: 'on-first-retry',          // save traces for failed+retried tests
@@ -48,8 +54,12 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   projects: [
-    // Global setup creates auth storage states — runs before test projects
-    { name: 'setup', testMatch: /global\.setup\.ts/ },
+    // Global setup creates auth storage states — runs before test projects.
+    // testDir: '.' is required: the top-level testDir above scopes discovery to
+    // ./tests/e2e, so a root-level global.setup.ts is never found, the setup
+    // project matches zero tests, and every test fails with ENOENT on the
+    // storageState file below.
+    { name: 'setup', testDir: '.', testMatch: /global\.setup\.ts/ },
     {
       name: 'chromium',
       use: {
@@ -83,6 +93,13 @@ setup('authenticate as customer', async ({ page }) => {
 ```
 
 Add `tests/fixtures/storageState/*.json` to `.gitignore` — they contain session tokens.
+
+Because `storageState` is set at the **project** level, a test that must start logged out
+overrides it per-file rather than deleting the default:
+
+```ts
+test.use({ storageState: { cookies: [], origins: [] } });
+```
 
 ## Fixtures — extend `@playwright/test`
 
@@ -211,7 +228,8 @@ npx playwright test --grep @smoke          # run tagged subset
 
 ## Live-browser exploration with the Playwright MCP server
 
-The `mcp/playwright.json` wires the `@playwright/mcp` server into your AI tool. Use it to:
+Installing this objective wires `@playwright/mcp` into `.mcp.json` (Claude Code)
+or `.cursor/mcp.json` (Cursor). It the `@playwright/mcp` server into your AI tool. Use it to:
 
 - Navigate the live app and discover stable locators before writing specs.
 - Verify that a user journey completes end-to-end interactively.
