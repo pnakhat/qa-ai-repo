@@ -29,37 +29,52 @@ don't copy them: if the `playwright-test-planner` agent is missing, run
 `npx playwright init-agents --loop=claude` (it writes them under `.claude/agents/`;
 re-run after upgrading Playwright).
 
-**How to use them depends on how you're running:**
-- **You have the Agent tool** (running as the main session, e.g. `claude --agent qa-e2e-author`):
-  delegate each phase to the matching agent, one generator call per scenario
-  (independent scenarios can run in parallel).
-- **You don't** (running as a subagent, which can't launch subagents): run the phase
-  yourself. Read that agent's definition file under `.claude/agents/` as the playbook
-  and call the same `mcp__playwright-test__*` tools it lists.
+**How to use them depends on what you can launch:**
+- **The Agent tool lists `playwright-test-planner` / `-generator` / `-healer` as launchable
+  types:** delegate each phase to the matching agent, one generator call per scenario
+  (independent scenarios can run in parallel). Unless the caller told you to run inline.
+- **Otherwise** (no Agent tool, or those types aren't offered): run the phase yourself.
+  Read that agent's definition file under `.claude/agents/` as the playbook and call the
+  same `mcp__playwright-test__*` tools it lists (load them via ToolSearch if deferred).
 
 Their output is a draft. The generator writes raw `page.*` calls and the healer may mark
 a test `test.fixme()`; this skill's rules still decide what ships.
+
+Known tool quirks:
+- The generator only records actions and `verify_*` tools; `browser_verify_list_visible` needs
+  a real ARIA list. Order and content assertions (sorted lists, tables, grids) usually have
+  to be written during the refactor, from the snapshot evidence.
+- Element refs go stale after any re-render; take a fresh `browser_snapshot` before reusing one.
+- `test_run` locations match by prefix: `tests/e2e/sort` also runs `tests/e2e/sort-by-x.spec.ts`.
+- The MCP writes snapshots to `.playwright-mcp/`; delete it when done and make sure it's
+  in `.gitignore`.
 
 ## Process
 
 1. **Discover the app and test landscape.** Inspect routes, components, and any existing
    `tests/` layout, `tests/pages/`, and `tests/fixtures/`. Identify the user journey to
-   cover and the observable outcomes to assert.
-2. **Bootstrap the loop.** Make sure the built-in agents exist (above) and that a seed test
-   (`tests/seed.spec.ts` by default) imports the project's fixtures, not `@playwright/test`,
+   cover and the observable outcomes to assert. **Check for specs that already cover part
+   of the journey:** extend or replace that spec rather than adding a second file for the
+   same journey, and name any spec you replace in the report.
+2. **Bootstrap the loop.** Make sure the built-in agents exist (above) and find the seed test
+   (`init-agents` writes `tests/seed.spec.ts`, but projects often move it, so search for
+   `seed.spec.ts` and pass its path explicitly). The seed must import the project's fixtures, not `@playwright/test`,
    and lands on the journey's start page. The seed is what every generated test starts from,
    so storage-state auth and fixtures flow through it.
 3. **Plan.** Run the planner for the journey. Review `specs/<name>.md`: one isolated journey
    per scenario, observable outcomes as expectations, nothing the API or unit layer should own.
 4. **Generate.** Run the generator for each scenario. Steps are verified in a real browser
-   as they are recorded, so locators come from the live accessibility tree.
+   as they are recorded, so locators come from the live accessibility tree. Its files are
+   drafts at the paths the plan names; once folded into the final spec, delete them and
+   update the plan's `File:` lines to the final path.
 5. **Refactor to project conventions.** Per the skill:
    - Move raw `page.click()` / `page.fill()` into intent-level methods on Page Objects under
      `tests/pages/` (reuse existing ones first).
    - Import `test`/`expect` from the project's fixtures; one journey per file under `tests/e2e/`.
    - Keep user-facing locators; replace any CSS/XPath the generator fell back to.
    - Keep web-first assertions, no sleeps. Mock only third-party or slow services.
-6. **Heal.** Run the healer on any failing spec (including ones your refactor broke). Then
+6. **Heal.** Run the refactored specs with `test_run`; if all pass, healing is done. Run the
+   healer on any failing spec (including ones your refactor broke). Then
    review its diff: reject a weakened assertion, an added sleep, or a brittle selector. A
    `test.fixme()` means the healer thinks the app is broken; keep it only with the reason in
    your report, never as a silent skip.
