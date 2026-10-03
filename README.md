@@ -56,6 +56,11 @@ cp -r _template my-objective        # scaffold
 npx qa-ai-repo add my-objective     # try it locally
 ```
 
+Agents should reference their skill rather than duplicate it: add
+`skills: <skill-name>` to the agent's frontmatter (Claude Code preloads it) and
+keep only the role, process steps, and report format in the agent body. Rules
+and guardrails live once, in the skill.
+
 ## Local development
 
 ```bash

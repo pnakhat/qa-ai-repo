@@ -120,6 +120,8 @@ Fix the cause the taxonomy named. Recipes with before/after code in `reference.m
 |---------|--------|
 | `retries: 3` on trunk to make it green | `retries: 0` on trunk; measure flake rate; fix root cause |
 | `await page.waitForTimeout(2000)` / `time.sleep(2)` | Web-first assertion or wait-for-condition |
+| Widening global timeouts to absorb the flake | Wait on the actual condition; fix the slow/racy step |
+| `--workers=1` forever to dodge a shared-state bug | Remove the shared state; per-test fresh state so tests pass in parallel |
 | Deleting the failing test to unblock CI | Quarantine with owner + issue + SLA; delete only as an owned SLA-breach decision |
 | `test.skip` with no owner, issue, or SLA | Tag `@flaky`, link issue, assign owner, set due date |
 | Quarantine forever, nobody looks again | SLA + auto-escalate on breach; un-quarantine after N green |

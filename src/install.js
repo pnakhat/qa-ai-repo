@@ -114,6 +114,13 @@ function rewriteSiblingLinks(text, skillName, siblings) {
   return out;
 }
 
+// Agents reference skill files by their Claude Code path (.claude/skills/<skill>/x.md).
+// Other tools keep those files elsewhere (see copySiblings), so repoint the prefix.
+function readAgent(objective, agentFile, skillsPrefix) {
+  const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
+  return { data, body: body.split('.claude/skills/').join(skillsPrefix) };
+}
+
 function copySiblings(ctx, objective, skillName, destDir) {
   const dir = join(objective.dir, 'skills', skillName);
   for (const f of skillSiblings(objective, skillName)) {
@@ -164,7 +171,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
+      const { data, body } = readAgent(objective, agentFile, '');
       ensureWrite(ctx, join(ctx.cwd, '.cursor', 'rules', `${name}.mdc`), toMdc(data, body));
     },
     mcp(ctx, objective, mcpFile) {
@@ -187,7 +194,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
+      const { data, body } = readAgent(objective, agentFile, '');
       const md = `# ${data.name || name}\n\n${data.description || ''}\n\n${body.trim()}\n`;
       ensureWrite(ctx, join(ctx.cwd, '.windsurf', 'rules', `${name}.md`), md);
     },
@@ -213,7 +220,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
+      const { data, body } = readAgent(objective, agentFile, '.qa-ai/');
       appendAgentsMd(ctx, data.name || name, data.description, body);
     },
     mcp(ctx, objective, mcpFile) {

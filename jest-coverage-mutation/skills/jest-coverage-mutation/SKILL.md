@@ -82,6 +82,7 @@ average that hides weak hotspots.
 | Test calls the function but has no `expect` | Every test asserts on a **value/outcome**, not just "no throw" |
 | Excluding mutators or files to lift the score | Scope by risk, but never delete mutators to game the number |
 | `stryker.conf` `mutate` narrowed to already-green files | Mutate the logic-dense code, including where survivors live |
+| Removing or skipping tests to lift the number or pass the gate | Fix the tests; scope by risk, not by what is convenient to make pass |
 | Mutating the whole repo on every PR (30+ min) | `--since=origin/main --incremental` on PRs, full run nightly |
 | Survived mutants triaged as "acceptable" and ignored | Each survivor = an uncaught bug; kill it or justify in writing |
 | Chasing the % — adding trivial tests to bump the number | Chase the **survivor**; a killed mutant is a real bug now caught |

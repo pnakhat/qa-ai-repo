@@ -139,6 +139,8 @@ already has correctly.
   honestly: automated pass + which manual checks were performed.
 - **Cite the WCAG success criterion** for every finding so it's actionable and
   auditable, not an opinion.
+- **Give a concrete fix, not advice.** Name the element and the exact markup/CSS
+  change, not "improve accessibility."
 
 ## Works well with
 
