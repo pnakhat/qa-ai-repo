@@ -13,61 +13,69 @@ npx playwright install --with-deps    # browsers + OS deps
 
 ## Config — `playwright.config.ts`
 
+Most repos already have an e2e config. Add visual tests as **their own project**
+so screenshot settings, paths, and pinned viewport don't leak into existing
+specs. `expect` and `snapshotPathTemplate` are both valid per-project options.
+
 ```ts
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: './tests/visual',
-  fullyParallel: true,
-  // Fail the build if CI runs a test with no committed baseline — never
-  // silently create baselines on CI.
-  ignoreSnapshots: false,
-
-  expect: {
-    toHaveScreenshot: {
-      // Preferred tolerance: scales with image size. Start strict.
-      maxDiffPixelRatio: 0.01,
-      // Small per-pixel tolerance absorbs anti-aliasing. Never 0.
-      threshold: 0.2,
-      // Kill animations at capture time as a backstop to the fixture.
-      animations: 'disabled',
-      // Freeze the caret so text inputs don't flake.
-      caret: 'hide',
-      scale: 'css',
-    },
-  },
-
-  // Per-platform, per-project baseline paths so a Linux baseline is never
-  // compared against a macOS render.
-  snapshotPathTemplate:
-    '{testDir}/__screenshots__/{projectName}/{testFilePath}/{arg}{ext}',
-
+  // ...existing top-level config (testDir, use.baseURL, reporter) unchanged...
   projects: [
+    // ...existing projects (setup, chromium, …) unchanged...
     {
-      name: 'chromium-desktop',
+      name: 'visual',
+      testDir: './tests/visual',
+      // dependencies: ['setup'],           // if the app needs auth state
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1280, height: 800 }, // pinned
         deviceScaleFactor: 1,                    // pinned — 1x vs 2x diffs everywhere
       },
+      expect: {
+        toHaveScreenshot: {
+          maxDiffPixelRatio: 0.01, // preferred tolerance: scales with image size. Start strict.
+          threshold: 0.2,          // small per-pixel tolerance absorbs anti-aliasing. Never 0.
+          animations: 'disabled',  // backstop to the fixture's CSS
+          caret: 'hide',
+          scale: 'css',
+        },
+      },
+      // {platform} keeps a Linux baseline from ever being compared against a
+      // macOS render. Without it, per-platform baselines collide.
+      snapshotPathTemplate:
+        '{testDir}/__screenshots__/{platform}/{projectName}/{testFilePath}/{arg}{ext}',
     },
   ],
 });
 ```
 
+For a visual-only repo, the same `expect` and `snapshotPathTemplate` keys work at
+the top level instead.
+
+Keep the visual project out of the default e2e script until baselines exist for
+the CI platform, e.g. `"test:e2e": "playwright test --project=chromium"` and
+`"test:visual": "playwright test --project=visual"`. Otherwise a plain
+`playwright test` on Linux CI fails on missing baselines.
+
 ## Stabilization fixture — `tests/visual/fixtures.ts`
 
-Extend `@playwright/test` so every visual test starts from a frozen, font-ready,
-animation-free page. Import `test`/`expect` from here, not from `@playwright/test`.
+Every visual test should start from a frozen, font-ready, animation-free page.
+Import `test`/`expect` from here, not from `@playwright/test`. **If the project
+already has a fixtures file (page objects, auth), extend that instead of
+`@playwright/test`** so visual tests reuse the same page objects.
 
 ```ts
+// Extend the app's fixtures if they exist: import { test as base, expect } from '../fixtures';
 import { test as base, expect } from '@playwright/test';
 
 const FROZEN_TIME = new Date('2026-01-01T12:00:00Z');
 
-export const test = base.extend({
+export const test = base.extend<{ stabilize: () => Promise<void> }>({
   page: async ({ page }, use) => {
-    // 1. Freeze the clock BEFORE any app code runs.
+    // 1. Freeze the clock BEFORE any app code runs. setFixedTime pins Date only;
+    //    use page.clock.install() + pauseAt() if timers drive what's rendered.
     await page.clock.setFixedTime(FROZEN_TIME);
 
     // 2. Kill animations/transitions globally as a CSS backstop.
@@ -87,16 +95,20 @@ export const test = base.extend({
     await use(page);
   },
 
-  // Auto-fixture: wait for fonts + network idle before any assertion.
-  stabilize: [
-    async ({ page }, use) => {
-      await use(async () => {
-        await page.waitForLoadState('networkidle');
-        await page.evaluate(() => document.fonts.ready);
+  // On-demand (not auto): call `await stabilize()` right before each screenshot.
+  stabilize: async ({ page }, use) => {
+    await use(async () => {
+      await page.waitForLoadState('networkidle');
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        // Images still decoding render blank or half-painted.
+        await Promise.all(
+          Array.from(document.images).map((img) => img.decode().catch(() => {})),
+        );
+        (document.activeElement as HTMLElement | null)?.blur();
       });
-    },
-    { auto: false },
-  ],
+    });
+  },
 });
 
 export { expect };
@@ -109,8 +121,19 @@ import { test, expect } from './fixtures';
 
 test('dashboard renders', async ({ page, stabilize }) => {
   await page.goto('/dashboard');
-  await stabilize();                 // fonts loaded, network idle, clock frozen
-  await expect(page).toHaveScreenshot('dashboard.png');
+  await stabilize();                 // fonts + images ready, network idle, clock frozen
+  await expect(page.getByTestId('dashboard')).toHaveScreenshot('dashboard.png');
+});
+
+// Logged-out views in a project that uses storageState auth:
+test.describe('logged out', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('login form', async ({ page, stabilize }) => {
+    await page.goto('/');
+    await stabilize();
+    await expect(page.getByRole('form', { name: 'Login' })).toHaveScreenshot('login-form.png');
+  });
 });
 ```
 
@@ -180,7 +203,8 @@ matches CI. Generate and update baselines through this image only.
 
 ```dockerfile
 # Dockerfile.visual — tag MUST match the installed @playwright/test version
-FROM mcr.microsoft.com/playwright:v1.50.0-noble
+# Get it with: npx playwright --version   → e.g. 1.63.0 → v1.63.0-noble
+FROM mcr.microsoft.com/playwright:v<PLAYWRIGHT_VERSION>-noble
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -199,6 +223,27 @@ docker run --rm -v "$PWD/tests:/app/tests" app-visual \
 # Now review the changed PNGs in git before committing.
 git status tests/visual/__screenshots__
 ```
+
+## First baselines and proving stability
+
+Creating baselines for new tests (in the container):
+
+```bash
+npx playwright test --project=visual --update-snapshots=missing
+```
+
+`missing` writes only absent baselines and never overwrites existing ones. On
+that first run Playwright reports the new tests as **failed** with
+`A snapshot doesn't exist at …, writing actual.` That's expected: the PNG was
+written. Open each new PNG and check it shows the right thing before going on.
+
+Then prove the baselines are stable: compare only, several times:
+
+```bash
+npx playwright test --project=visual --update-snapshots=none --repeat-each=3
+```
+
+Any failure here is nondeterminism. Fix the test, don't re-baseline.
 
 ## `--update-snapshots` review discipline
 
@@ -228,7 +273,7 @@ jobs:
   visual:
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.50.0-noble   # matches package.json
+      image: mcr.microsoft.com/playwright:v<PLAYWRIGHT_VERSION>-noble   # must equal installed @playwright/test
     steps:
       - uses: actions/checkout@v4
       - run: npm ci
