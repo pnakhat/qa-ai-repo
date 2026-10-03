@@ -121,6 +121,22 @@ function readAgent(objective, agentFile, skillsPrefix) {
   return { data, body: body.split('.claude/skills/').join(skillsPrefix) };
 }
 
+// Claude Code preloads `skills:` frontmatter. Cursor and Windsurf drop that
+// field and write the agent as its own rule, so the SKILL.md guardrails never
+// arrive unless they are inlined here. Sibling links are rewritten the same
+// way as the standalone skill rule, which lives in the same rules directory.
+function withSkillGuardrails(objective, data, body) {
+  const names = String(data.skills || '').split(/[,\s]+/).filter(Boolean);
+  if (!names.length) return body;
+  const parts = [body.trim()];
+  for (const skillName of names) {
+    const { body: skillBody, siblings } = readSkill(objective, skillName);
+    if (!skillBody.trim()) continue;
+    parts.push(rewriteSiblingLinks(skillBody, skillName, siblings).trim());
+  }
+  return parts.join('\n\n');
+}
+
 function copySiblings(ctx, objective, skillName, destDir) {
   const dir = join(objective.dir, 'skills', skillName);
   for (const f of skillSiblings(objective, skillName)) {
@@ -172,7 +188,8 @@ const adapters = {
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
       const { data, body } = readAgent(objective, agentFile, '');
-      ensureWrite(ctx, join(ctx.cwd, '.cursor', 'rules', `${name}.mdc`), toMdc(data, body));
+      ensureWrite(ctx, join(ctx.cwd, '.cursor', 'rules', `${name}.mdc`),
+        toMdc(data, withSkillGuardrails(objective, data, body)));
     },
     mcp(ctx, objective, mcpFile) {
       const name = basename(mcpFile, '.json');
@@ -195,7 +212,8 @@ const adapters = {
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
       const { data, body } = readAgent(objective, agentFile, '');
-      const md = `# ${data.name || name}\n\n${data.description || ''}\n\n${body.trim()}\n`;
+      const full = withSkillGuardrails(objective, data, body);
+      const md = `# ${data.name || name}\n\n${data.description || ''}\n\n${full.trim()}\n`;
       ensureWrite(ctx, join(ctx.cwd, '.windsurf', 'rules', `${name}.md`), md);
     },
     mcp(ctx, objective, mcpFile) {

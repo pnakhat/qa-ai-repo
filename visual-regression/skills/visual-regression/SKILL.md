@@ -18,12 +18,12 @@ threshold, eliminate every source of nondeterministic pixels.
 | Source of nondeterminism | Fix |
 |--------------------------|-----|
 | CSS animations & transitions | Pass `animations: 'disabled'` to `toHaveScreenshot`; inject a global stylesheet that zeroes `transition`/`animation` duration |
-| Time, dates, relative timestamps ("2m ago") | Freeze the clock — `page.clock.setFixedTime(...)` or mock `Date` before navigation |
+| Time, dates, relative timestamps ("2m ago") | Freeze the clock before navigation. `page.clock.setFixedTime(...)` pins `Date` but timers keep running — enough for rendered dates. If timers drive what's on screen (countdowns, carousels, polling), use `page.clock.install({ time })` + `page.clock.pauseAt(...)` instead |
 | Random or live data (feeds, prices, ids) | Seed a fixed dataset or mock the API with `page.route`; never snapshot live production data |
 | Web fonts loading late | Bundle/self-host fonts; `await document.fonts.ready` before the snapshot so text isn't captured mid-swap |
 | Viewport & `deviceScaleFactor` drift | Pin both in the Playwright project — a 1x vs 2x capture diffs on every pixel |
 | OS-level font rendering & anti-aliasing | Generate baselines in the **same container image** as CI — this is non-negotiable (see below) |
-| Lazy-loaded images / spinners still spinning | Wait for network idle and the real content locator before capturing |
+| Lazy-loaded images / spinners still spinning | Wait for network idle, every `<img>` to finish decoding, and the real content locator before capturing |
 | Caret blink, hover/focus bleed | Blur the active element; capture a deliberate state, not an accidental one |
 
 ## Baselines belong to CI, not your laptop
@@ -39,6 +39,12 @@ build artifact of the CI environment, not of whoever ran the test last.
 | Pin the Playwright container tag to the version in `package.json` | Let the container version drift from the installed `@playwright/test` |
 | Store per-platform baselines when tests run on more than one OS | Share one baseline across macOS + Linux and fight the diffs |
 | Commit baselines the CI image produced, reviewed in the PR | Regenerate silently on `main` to make red go green |
+
+**No container runtime available?** You may generate host-platform baselines
+to prove the tests are stable, but only because `snapshotPathTemplate` includes
+`{platform}` — they land in e.g. `__screenshots__/darwin/` and can never be
+compared against Linux CI renders. Flag this loudly in the report, don't present
+them as the CI baselines, and leave the container regeneration as a follow-up.
 
 Run updates through `docker run` locally against the Playwright image, or via a
 dedicated CI job — see `reference.md` for both.
