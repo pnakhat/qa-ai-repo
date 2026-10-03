@@ -52,6 +52,26 @@ test('siblings are namespaced per skill, so same-named files cannot collide', ()
   }
 });
 
+test('cursor and windsurf agents inline the skill guardrails skills: would preload', () => {
+  // Claude Code preloads SKILL.md via skills: frontmatter. These adapters drop
+  // that field, so the agent rule has to carry the skill body itself.
+  const cwd = fresh();
+  install(loadObjective('jest-coverage-mutation'), ['cursor', 'windsurf', 'claude'], { cwd, log() {} });
+
+  const marker = 'Anti-patterns — smells to reject';
+  const cursorAgent = readFileSync(join(cwd, '.cursor', 'rules', 'test-effectiveness-auditor.mdc'), 'utf8');
+  const windsurfAgent = readFileSync(join(cwd, '.windsurf', 'rules', 'test-effectiveness-auditor.md'), 'utf8');
+  assert.ok(cursorAgent.includes(marker), 'cursor agent is missing SKILL.md guardrails');
+  assert.ok(windsurfAgent.includes(marker), 'windsurf agent is missing SKILL.md guardrails');
+  assert.match(cursorAgent, /`jest-coverage-mutation\/reference\.md`/);
+  assert.match(windsurfAgent, /`jest-coverage-mutation\/reference\.md`/);
+  assert.deepEqual(deadLinks(join(cwd, '.cursor', 'rules', 'test-effectiveness-auditor.mdc'), join(cwd, '.cursor', 'rules')), []);
+  assert.deepEqual(deadLinks(join(cwd, '.windsurf', 'rules', 'test-effectiveness-auditor.md'), join(cwd, '.windsurf', 'rules')), []);
+
+  const claudeAgent = readFileSync(join(cwd, '.claude', 'agents', 'test-effectiveness-auditor.md'), 'utf8');
+  assert.ok(!claudeAgent.includes(marker), 'claude keeps skills: preload and must not inline SKILL.md');
+});
+
 test('an agent that is told to use an MCP server does not restrict its tools', () => {
   // An explicit `tools:` allowlist in agent frontmatter excludes mcp__* tools,
   // which silently disables the MCP server the same objective installs.
