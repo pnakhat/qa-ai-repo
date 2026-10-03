@@ -65,8 +65,9 @@ Known tool quirks:
    per scenario, observable outcomes as expectations, nothing the API or unit layer should own.
 4. **Generate.** Run the generator for each scenario. Steps are verified in a real browser
    as they are recorded, so locators come from the live accessibility tree. Its files are
-   drafts at the paths the plan names; once folded into the final spec, delete them and
-   update the plan's `File:` lines to the final path.
+   drafts at the paths the plan names; once folded into the final spec, delete a draft
+   only when its path differs from the final spec, and update the plan's `File:` lines to
+   the final path.
 5. **Refactor to project conventions.** Per the skill:
    - Move raw `page.click()` / `page.fill()` into intent-level methods on Page Objects under
      `tests/pages/` (reuse existing ones first).
