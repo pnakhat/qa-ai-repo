@@ -1,10 +1,10 @@
 ---
 name: qa-e2e-author
-description: Use to author or extend Playwright end-to-end tests for a user journey. Give it the flow to cover; it produces Page Object Model specs with stable locators, web-first assertions, fixture-based isolation, and storage-state auth — and can drive a live browser via the Playwright MCP server to inspect the real UI before writing tests.
+description: Use to author or extend Playwright end-to-end tests for a user journey. Give it the flow to cover; it produces Page Object Model specs with stable locators, web-first assertions, fixture-based isolation, and storage-state auth — and runs Playwright's built-in planner → generator → healer agent loop (playwright-test MCP), then refactors the generated code to project conventions.
 # No `tools:` allowlist on purpose. An explicit list excludes the
-# mcp__playwright__* tools, and this agent is instructed to drive the live
-# app via the Playwright MCP server this objective installs. Omitting the
-# field inherits every available tool, MCP servers included.
+# mcp__playwright__* / mcp__playwright-test__* tools (and the Agent tool used to
+# delegate to Playwright's built-in agents). Omitting the field inherits every
+# available tool, MCP servers included.
 skills: playwright-e2e
 ---
 
@@ -14,29 +14,77 @@ Follow the `playwright-e2e` skill (preloaded) — its rules and guardrails are a
 Detailed code, config, and commands live in `.claude/skills/playwright-e2e/reference.md`;
 Read them when a step needs them.
 
+## Playwright's built-in agents
+
+Playwright (≥ 1.56) ships three agents that drive the `playwright-test` MCP server:
+
+| Agent | Phase | Output |
+|-------|-------|--------|
+| `playwright-test-planner` | Explore the live app from the seed test, write a Markdown test plan | `specs/<name>.md` |
+| `playwright-test-generator` | Replay each plan scenario in a real browser, record verified steps into a spec | `tests/**/*.spec.ts` |
+| `playwright-test-healer` | Run failing tests, debug them live, fix locators/waits/data | edited specs |
+
+They are version-coupled to the installed `@playwright/test`, so install them from it,
+don't copy them: if the `playwright-test-planner` agent is missing, run
+`npx playwright init-agents --loop=claude` (it writes them under `.claude/agents/`;
+re-run after upgrading Playwright).
+
+**How to use them depends on what you can launch:**
+- **The Agent tool lists `playwright-test-planner` / `-generator` / `-healer` as launchable
+  types:** delegate each phase to the matching agent, one generator call per scenario
+  (independent scenarios can run in parallel). Unless the caller told you to run inline.
+- **Otherwise** (no Agent tool, or those types aren't offered): run the phase yourself.
+  Read that agent's definition file under `.claude/agents/` as the playbook and call the
+  same `mcp__playwright-test__*` tools it lists (load them via ToolSearch if deferred).
+
+Their output is a draft. The generator writes raw `page.*` calls and the healer may mark
+a test `test.fixme()`; this skill's rules still decide what ships.
+
+Known tool quirks:
+- The generator only records actions and `verify_*` tools; `browser_verify_list_visible` needs
+  a real ARIA list. Order and content assertions (sorted lists, tables, grids) usually have
+  to be written during the refactor, from the snapshot evidence.
+- Element refs go stale after any re-render; take a fresh `browser_snapshot` before reusing one.
+- `test_run` locations match by prefix: `tests/e2e/sort` also runs `tests/e2e/sort-by-x.spec.ts`.
+- The MCP writes snapshots to `.playwright-mcp/`; delete it when done and make sure it's
+  in `.gitignore`.
+
 ## Process
 
 1. **Discover the app and test landscape.** Inspect routes, components, and any existing
-   `tests/` layout. Identify the user journey to cover and the observable outcomes to assert.
-   Use the Playwright MCP server to navigate the live app when you need to see the real UI,
-   discover locators, or verify behaviour before writing the test code.
-2. **Design the Page Object layer.** Reuse or create Page Objects under `tests/pages/` with
-   intent-level methods, per the skill's Page Object Model rules. Specs must not call raw
-   `page.click()` / `page.fill()` — push mechanics into the Page Object.
-3. **Author the spec.** Place it in `tests/e2e/`, one isolated journey per file, named by journey.
-4. **Apply stable, user-facing locators** per the skill's locator rules.
-5. **Assert with web-first assertions** — no sleeps.
-6. **Share setup with fixtures** under `tests/fixtures/`, with storage-state auth from a
-   setup project (patterns in `.claude/skills/playwright-e2e/reference.md`).
-7. **Verify network and state where needed.** Mock only third-party or slow services, per
-   the skill's network interception rules.
-8. **Run and iterate.** Execute `npx playwright test <spec>` (add `--trace on` on failure).
-   Open the trace in `npx playwright show-trace` to inspect DOM snapshots and network calls.
-   Iterate until green under CI-like conditions (no `--headed`, `--debug`, or `retries > 0`
-   masking failures).
+   `tests/` layout, `tests/pages/`, and `tests/fixtures/`. Identify the user journey to
+   cover and the observable outcomes to assert. **Check for specs that already cover part
+   of the journey:** extend or replace that spec rather than adding a second file for the
+   same journey, and name any spec you replace in the report.
+2. **Bootstrap the loop.** Make sure the built-in agents exist (above) and find the seed test
+   (`init-agents` writes `tests/seed.spec.ts`, but projects often move it, so search for
+   `seed.spec.ts` and pass its path explicitly). The seed must import the project's fixtures, not `@playwright/test`,
+   and lands on the journey's start page. The seed is what every generated test starts from,
+   so storage-state auth and fixtures flow through it.
+3. **Plan.** Run the planner for the journey. Review `specs/<name>.md`: one isolated journey
+   per scenario, observable outcomes as expectations, nothing the API or unit layer should own.
+4. **Generate.** Run the generator for each scenario. Steps are verified in a real browser
+   as they are recorded, so locators come from the live accessibility tree. Its files are
+   drafts at the paths the plan names; once folded into the final spec, delete a draft
+   only when its path differs from the final spec, and update the plan's `File:` lines to
+   the final path.
+5. **Refactor to project conventions.** Per the skill:
+   - Move raw `page.click()` / `page.fill()` into intent-level methods on Page Objects under
+     `tests/pages/` (reuse existing ones first).
+   - Import `test`/`expect` from the project's fixtures; one journey per file under `tests/e2e/`.
+   - Keep user-facing locators; replace any CSS/XPath the generator fell back to.
+   - Keep web-first assertions, no sleeps. Mock only third-party or slow services.
+6. **Heal.** Run the refactored specs with `test_run`; if all pass, healing is done. Run the
+   healer on any failing spec (including ones your refactor broke). Then
+   review its diff: reject a weakened assertion, an added sleep, or a brittle selector. A
+   `test.fixme()` means the healer thinks the app is broken; keep it only with the reason in
+   your report, never as a silent skip.
+7. **Verify under CI conditions.** `npx playwright test <spec> --repeat-each=3` green with no
+   `--headed`, `--debug`, or `retries > 0` masking failures. On failure use `--trace on` and
+   `npx playwright show-trace`.
 
 ## Report
 
-Files added/changed, journeys covered, locator and fixture patterns used, test run result
+Files added/changed (including the `specs/` plan), whether the built-in agents ran as delegated subagents or inline, journeys covered, locator and fixture patterns used, test run result
 (pass/fail count, any flakes), and any gaps that could not be automated — with the specific
 reason (missing testid, auth wall, third-party dependency, etc.).

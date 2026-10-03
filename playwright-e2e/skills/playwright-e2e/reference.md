@@ -238,6 +238,23 @@ or `.cursor/mcp.json` (Cursor). It the `@playwright/mcp` server into your AI too
 The MCP server drives a real browser; it does not replace `npx playwright test` for
 automated runs but is invaluable for exploration, locator discovery, and live debugging.
 
+## Playwright test agents — plan → generate → heal
+
+Playwright ≥ 1.56 ships planner, generator, and healer agent definitions that use
+the `playwright-test` MCP server (`npx playwright run-test-mcp-server`, also
+installed by this objective).
+
+```bash
+npx playwright init-agents --loop=claude   # writes .claude/agents/playwright-test-*.md
+npx playwright init-agents --loop=vscode   # or opencode; re-run after upgrading Playwright
+```
+
+- **Seed** (`tests/seed.spec.ts`): the test every generated test starts from. Import
+  the project's fixtures in it so auth state and page objects carry through.
+- **Planner** → `specs/<name>.md`. **Generator** → one spec per plan scenario.
+  **Healer** → fixes failing specs, or marks them `test.fixme()` if the app is broken.
+- Generated code uses raw `page.*` calls; refactor it into Page Objects before merging.
+
 ## CI gate example (GitHub Actions)
 
 ```yaml
