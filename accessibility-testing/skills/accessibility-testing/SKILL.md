@@ -11,8 +11,10 @@ manually test what it can't. **An axe pass is a floor, not a certificate.**
 
 ## Automation catches ~30–40% — the rest is manual
 
-Automated tools reliably detect only about a third of real accessibility issues.
-The high-value bugs — a keyboard trap, a focus that vanishes, a button that reads
+Measured by WCAG success criteria, automated tools can fully decide only about a
+third of them. (Deque's axe data reports ~57% *by issue volume*, because the
+issues automation catches — contrast, missing alt — are the most frequent.)
+Either way, most criteria need a human. The high-value bugs — a keyboard trap, a focus that vanishes, a button that reads
 as "button" with no name — are invisible to a scanner. Split the work honestly.
 
 | ✅ Automation catches (cheap, gate it) | ❌ Needs a human (automation can't judge) |
@@ -20,10 +22,11 @@ as "button" with no name — are invisible to a scanner. Split the work honestly
 | Missing `alt` attribute on `<img>` | Whether `alt` text is *meaningful* or noise |
 | Color contrast below AA thresholds | Whether focus *order* is logical |
 | Form control with no associated label | Whether an error message is *understandable* |
-| Duplicate `id`, invalid ARIA attribute | Whether a custom widget is operable by keyboard |
+| Duplicate `id` referenced by ARIA, invalid ARIA attribute | Whether a custom widget is operable by keyboard |
 | Missing document `lang`, empty heading | Whether a modal traps and restores focus |
 | Wrong `role` value, `aria-*` on wrong element | Whether a screen reader announces state changes |
 | Missing `name` on a form field | Whether the reading order matches the visual order |
+| Pointer target < 24×24 CSS px (`target-size`, only with the `wcag22aa` tag) | Whether focus is hidden behind a sticky header or cookie banner |
 
 Run axe on every key page/component to hold the line, then walk the manual
 checklist below for the flows that matter.
@@ -36,7 +39,7 @@ one browser smoke for the assembled page. See `reference.md` for full code.
 | Level | Tool | Use for |
 |-------|------|---------|
 | Component (unit) | `jest-axe` / `vitest-axe` (`toHaveNoViolations`) | Design-system components, forms, widgets |
-| Storybook | `@storybook/addon-a11y` + `@axe-core/playwright` on stories | Every documented component state |
+| Storybook | `@storybook/addon-a11y` with `parameters.a11y.test: 'error'` (runs in the Vitest addon) | Every documented component state |
 | E2E / page | `@axe-core/playwright` (`AxeBuilder`) as a fixture-level assertion | Assembled pages, real routes, post-interaction states |
 
 - Wrap axe as a **fixture-level assertion** (`checkA11y`) so any spec can assert
@@ -48,6 +51,16 @@ one browser smoke for the assembled page. See `reference.md` for full code.
   loading states, which produce transient false results.
 - Assert **zero violations at a chosen impact level** (e.g. fail on
   `serious`/`critical`; triage `moderate`/`minor`) rather than an ad-hoc count.
+- **Pass the tags explicitly**: `withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa'])`.
+  axe's WCAG 2.2 rule (`target-size`) is **off by default** and only runs when
+  `wcag22aa` is requested. Tag filtering also drops `best-practice` rules
+  (`region`, `heading-order`, `landmark-one-main`); add that tag as a
+  non-blocking report if you want them.
+- **Automate the keyboard checks you can.** `page.keyboard.press('Tab')` +
+  `expect(locator).toBeFocused()` pins focus order, modal focus trap, and focus
+  restore; `toMatchAriaSnapshot` pins the role/name tree of a widget;
+  `page.emulateMedia({ reducedMotion: 'reduce' })` tests the reduced-motion path.
+  These still don't replace a screen-reader pass.
 
 ## The manual checklist — where the real bugs are
 
@@ -73,8 +86,24 @@ plus VoiceOver/NVDA quick keys.
   color alone.
 - **Motion.** Honor `prefers-reduced-motion`: disable non-essential animation,
   parallax, and auto-play when the user asks for less motion.
-- **Zoom / reflow.** Content is usable and doesn't require two-dimensional
-  scrolling at **200%** browser zoom and reflows at **400%** (≈320px viewport).
+- **Zoom / reflow.** Text resizes to **200%** without loss of content (1.4.4),
+  and content reflows without two-dimensional scrolling at **320 CSS px** wide —
+  i.e. 400% zoom on a 1280px viewport (1.4.10). Text spacing overrides (1.4.12)
+  don't clip content.
+- **WCAG 2.2 additions** — scanners barely cover these, so check them by hand:
+  - **2.4.11 Focus Not Obscured (AA)** — a focused element is never fully hidden
+    by a sticky header/footer, chat widget, or cookie banner.
+  - **2.5.7 Dragging Movements (AA)** — every drag (sortable list, slider, map)
+    has a single-pointer alternative (buttons, click-to-move).
+  - **2.5.8 Target Size (AA)** — pointer targets ≥ 24×24 CSS px, or spaced so a
+    24px circle around each doesn't overlap a neighbour (inline links exempt).
+  - **3.2.6 Consistent Help (A)** — help/contact links sit in the same relative
+    place on every page.
+  - **3.3.7 Redundant Entry (A)** — info already entered in the flow is
+    auto-filled or selectable, not retyped (e.g. "billing same as shipping").
+  - **3.3.8 Accessible Authentication (AA)** — login needs no cognitive test
+    (memorise, transcribe, solve a puzzle): paste and password managers work,
+    `autocomplete` is set, and any CAPTCHA has a non-cognitive alternative.
 
 ## WCAG severity — prioritize by impact, not by count
 
@@ -138,7 +167,9 @@ already has correctly.
 - **Never claim full accessibility from automation alone.** State the coverage
   honestly: automated pass + which manual checks were performed.
 - **Cite the WCAG success criterion** for every finding so it's actionable and
-  auditable, not an opinion.
+  auditable, not an opinion. Use WCAG 2.2 numbering; **4.1.1 Parsing is obsolete**
+  in 2.2 — don't report raw duplicate ids or HTML validity under it (map to 1.3.1
+  or 4.1.2 only when they actually break a name, role, or relationship).
 - **Give a concrete fix, not advice.** Name the element and the exact markup/CSS
   change, not "improve accessibility."
 
@@ -158,7 +189,8 @@ Soft companions — none is a hard dependency; use them where they already exist
 ## Reference
 
 See `reference.md` for install commands, working `@axe-core/playwright`,
-`jest-axe`, and Storybook setups, rule/tag config (`wcag2a`, `wcag2aa`,
-`wcag22aa`) with safe scoping/exclusion, a full manual keyboard + screen-reader
+`jest-axe`/`vitest-axe`, and Storybook setups, rule/tag config (`wcag2a` …
+`wcag22aa`) with safe scoping/exclusion, Playwright keyboard/focus and
+reduced-motion tests, a full manual keyboard + screen-reader + WCAG 2.2
 checklist, the contrast thresholds table, and a CI gate that fails on new
 violations.

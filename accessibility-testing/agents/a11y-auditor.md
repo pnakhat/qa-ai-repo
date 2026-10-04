@@ -33,7 +33,9 @@ Read them when a step needs them.
 4. **Check screen-reader semantics and forms** per the skill's manual checklist.
    Note VoiceOver/NVDA behavior where relevant.
 5. **Check the visual/perceptual criteria** — contrast, color alone, motion,
-   zoom/reflow — per the skill's manual checklist.
+   zoom/reflow — and the WCAG 2.2 additions (focus not obscured, target size,
+   dragging, accessible authentication, redundant entry, consistent help) per
+   the skill's manual checklist.
 6. **Map and prioritize.** For every finding, cite the exact WCAG success
    criterion and assign impact using the skill's severity table. Order the
    report by impact — blockers first.
