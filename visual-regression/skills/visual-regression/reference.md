@@ -37,9 +37,12 @@ export default defineConfig({
         toHaveScreenshot: {
           maxDiffPixelRatio: 0.01, // preferred tolerance: scales with image size. Start strict.
           threshold: 0.2,          // small per-pixel tolerance absorbs anti-aliasing. Never 0.
-          animations: 'disabled',  // backstop to the fixture's CSS
+          // The next three are already the defaults — stated so nobody "fixes" them.
+          animations: 'disabled',
           caret: 'hide',
           scale: 'css',
+          // Screenshot-only CSS (hide scrollbars, chat widgets); never affects the test run.
+          stylePath: './tests/visual/screenshot.css',
         },
       },
       // {platform} keeps a Linux baseline from ever being compared against a
@@ -52,7 +55,20 @@ export default defineConfig({
 ```
 
 For a visual-only repo, the same `expect` and `snapshotPathTemplate` keys work at
-the top level instead.
+the top level instead. `expect.toHaveScreenshot.pathTemplate` overrides
+`snapshotPathTemplate` for screenshots only, if text/aria snapshots should live
+elsewhere.
+
+`tests/visual/screenshot.css`, applied only while capturing:
+
+```css
+/* Hide what's legitimately dynamic and can't be frozen or masked cleanly. */
+::-webkit-scrollbar { display: none; }
+[data-testid="chat-launcher"], iframe[src*="ads"] { visibility: hidden !important; }
+```
+
+Prefer `visibility: hidden` (keeps layout) over `display: none` (reflows the page
+and hides layout bugs).
 
 Keep the visual project out of the default e2e script until baselines exist for
 the CI platform, e.g. `"test:e2e": "playwright test --project=chromium"` and
@@ -72,7 +88,9 @@ import { test as base, expect } from '@playwright/test';
 
 const FROZEN_TIME = new Date('2026-01-01T12:00:00Z');
 
-export const test = base.extend<{ stabilize: () => Promise<void> }>({
+import type { Locator } from '@playwright/test';
+
+export const test = base.extend<{ stabilize: (ready?: Locator) => Promise<void> }>({
   page: async ({ page }, use) => {
     // 1. Freeze the clock BEFORE any app code runs. setFixedTime pins Date only;
     //    use page.clock.install() + pauseAt() if timers drive what's rendered.
@@ -95,10 +113,14 @@ export const test = base.extend<{ stabilize: () => Promise<void> }>({
     await use(page);
   },
 
-  // On-demand (not auto): call `await stabilize()` right before each screenshot.
+  // On-demand (not auto): call `await stabilize(readyLocator)` right before each
+  // screenshot. Readiness is a web-first assertion on real content — not
+  // 'networkidle', which Playwright discourages for tests (polling, analytics and
+  // websockets keep it from ever settling, or it settles before data renders).
   stabilize: async ({ page }, use) => {
-    await use(async () => {
-      await page.waitForLoadState('networkidle');
+    await use(async (ready) => {
+      if (ready) await expect(ready).toBeVisible();
+      await page.mouse.move(0, 0); // no accidental :hover state
       await page.evaluate(async () => {
         await document.fonts.ready;
         // Images still decoding render blank or half-painted.
@@ -121,8 +143,10 @@ import { test, expect } from './fixtures';
 
 test('dashboard renders', async ({ page, stabilize }) => {
   await page.goto('/dashboard');
-  await stabilize();                 // fonts + images ready, network idle, clock frozen
-  await expect(page.getByTestId('dashboard')).toHaveScreenshot('dashboard.png');
+  const dashboard = page.getByTestId('dashboard');
+  await expect(page.getByRole('progressbar')).toBeHidden(); // spinner gone
+  await stabilize(dashboard);        // content visible, fonts + images ready, clock frozen
+  await expect(dashboard).toHaveScreenshot('dashboard.png');
 });
 
 // Logged-out views in a project that uses storageState auth:
@@ -131,8 +155,9 @@ test.describe('logged out', () => {
 
   test('login form', async ({ page, stabilize }) => {
     await page.goto('/');
-    await stabilize();
-    await expect(page.getByRole('form', { name: 'Login' })).toHaveScreenshot('login-form.png');
+    const form = page.getByRole('form', { name: 'Login' });
+    await stabilize(form);
+    await expect(form).toHaveScreenshot('login-form.png');
   });
 });
 ```
@@ -147,8 +172,9 @@ test('feed is deterministic', async ({ page, stabilize }) => {
     route.fulfill({ json: { items: FIXED_FEED } }),
   );
   await page.goto('/feed');
-  await stabilize();
-  await expect(page).toHaveScreenshot('feed.png');
+  const feed = page.getByRole('feed');
+  await stabilize(feed);
+  await expect(feed).toHaveScreenshot('feed.png');
 });
 ```
 
@@ -163,7 +189,7 @@ await expect(page).toHaveScreenshot('account.png', {
     page.getByRole('img', { name: /avatar/ }), // user-uploaded image
     page.getByTestId('promo-banner'),          // rotating ad
   ],
-  maskColor: '#FF00FF',   // explicit mask fill so masked areas are obvious in diffs
+  maskColor: '#FF00FF',   // the default, stated explicitly: masked areas are obvious in diffs
   maxDiffPixelRatio: 0.01,
 });
 ```
@@ -203,7 +229,8 @@ matches CI. Generate and update baselines through this image only.
 
 ```dockerfile
 # Dockerfile.visual — tag MUST match the installed @playwright/test version
-# Get it with: npx playwright --version   → e.g. 1.63.0 → v1.63.0-noble
+# Get it with: npx playwright --version   → e.g. "Version 1.63.0" → v1.63.0-noble
+# (-noble = Ubuntu 24.04; -jammy = 22.04. Pick one and keep it — the distro changes fonts.)
 FROM mcr.microsoft.com/playwright:v<PLAYWRIGHT_VERSION>-noble
 WORKDIR /app
 COPY package*.json ./
@@ -216,13 +243,20 @@ Update baselines locally *through the container* (never on the host):
 
 ```bash
 # Regenerate baselines in the same Linux image CI uses.
+# --ipc=host + --init are Playwright's recommended flags (Chromium can run out
+# of shared memory and crash without --ipc=host).
 docker build -f Dockerfile.visual -t app-visual .
-docker run --rm -v "$PWD/tests:/app/tests" app-visual \
-  npx playwright test --update-snapshots
+docker run --rm --ipc=host --init -v "$PWD/tests:/app/tests" app-visual \
+  npx playwright test --project=visual --update-snapshots=changed
 
 # Now review the changed PNGs in git before committing.
 git status tests/visual/__screenshots__
 ```
+
+The app under test must be reachable **from inside the container**: let
+Playwright's `webServer` start it in the container (the `COPY . .` above), or
+point `baseURL` at a deployed preview. `localhost` inside the container is not
+your host.
 
 ## First baselines and proving stability
 
@@ -252,13 +286,15 @@ reflex to clear a red board.
 
 1. **Reproduce the diff** and open the `-diff.png` / `-actual.png` artifacts.
 2. **Classify** each change: intended / real regression / nondeterminism.
-3. Only for **intended** changes, run `--update-snapshots` **in the container**.
+3. Only for **intended** changes, run `--update-snapshots=changed` **in the
+   container** (`changed` is what a bare `-u` means; avoid `all`, which rewrites
+   passing PNGs too).
 4. **Review the PNG diff in the PR** — a changed baseline is a reviewed artifact.
 5. Update **selectively** — target the specific test, don't blanket the suite:
 
 ```bash
-docker run --rm -v "$PWD/tests:/app/tests" app-visual \
-  npx playwright test dashboard.spec.ts --update-snapshots
+docker run --rm --ipc=host --init -v "$PWD/tests:/app/tests" app-visual \
+  npx playwright test dashboard.spec.ts --update-snapshots=changed
 ```
 
 Never wire `--update-snapshots` into the default CI test job — that auto-accepts
@@ -274,12 +310,14 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v<PLAYWRIGHT_VERSION>-noble   # must equal installed @playwright/test
+      options: --user 1001   # as in Playwright's CI docs; avoids root-owned files in the workspace
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: npm ci
       - name: Run visual tests
-        run: npx playwright test --config=playwright.config.ts
-        # No --update-snapshots here: CI compares, it never regenerates.
+        run: npx playwright test --project=visual --update-snapshots=none
+        # Compare-only: CI never regenerates. `none` also stops a missing
+        # baseline being written into the throwaway CI workspace.
 
       - name: Upload visual diffs
         if: failure()
@@ -300,7 +338,7 @@ before merge — the visual contract never changes without a human in the loop.
 
 ```bash
 npx playwright test --config=playwright.config.ts        # compare against baselines
-npx playwright test dashboard.spec.ts --update-snapshots # update ONE spec (in container)
+npx playwright test dashboard.spec.ts -u                # update ONE spec, mode 'changed' (in container)
 npx playwright show-report                               # open the HTML report + diffs
 npx playwright test --grep @visual                       # run only tagged visual tests
 ```
