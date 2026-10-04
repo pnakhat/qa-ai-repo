@@ -27,6 +27,13 @@ Score each feature/flow on two axes, 1–5, then multiply for a risk score (1–
 | 4 | Blocks a key journey, or affects money/data for many users |
 | 5 | Safety, data loss, security breach, revenue-blocking outage, or compliance violation |
 
+Risk-based testing per ISTQB: **risk level = likelihood × impact**, scored for
+*product* risks (the software fails) — track *project* risks (late environments,
+missing skills) separately in §10 of the template. Score with the team, not
+alone: likelihood from churn/complexity/incident history (`git log` churn per
+directory is a cheap proxy), impact from product/business owners. Re-score each
+quarter and after every Sev-1/Sev-2 incident.
+
 **Risk = Likelihood × Impact**, then bucket:
 
 | Score | Tier | Coverage warranted |
@@ -53,14 +60,23 @@ without a threshold and a consequence.
 
 | Metric | Formula | Good direction | Typical target |
 |--------|---------|----------------|----------------|
-| **Escape rate** | defects found in production ÷ total defects found (prod + pre-prod), per release or month | ↓ | < ~5%, trending down |
-| **MTTR** (mean time to restore) | Σ (restore time − detection time) ÷ number of incidents | ↓ | Sev-1 < 4h; overall < 1 day |
-| **Lead time for changes** | time from commit merged → running in production | ↓ | Elite: < 1 day |
+| **Escape rate** | defects found in production ÷ total defects found (prod + pre-prod), per release or month. ISTQB's *defect detection percentage* (DDP) is 1 − this | ↓ | < ~5%, trending down |
+| **Change lead time** (DORA) | time from commit → running in production | ↓ | Set from baseline; trend down |
+| **Deployment frequency** (DORA) | deploys to production per period | ↑ | Set from baseline |
+| **Change fail rate** (DORA) | deploys needing immediate intervention (rollback, hotfix) ÷ total deploys | ↓ | Set from baseline; trend down |
+| **Failed deployment recovery time** (DORA; formerly "MTTR") | time from a failed deploy to service restored | ↓ | Sev-1 < 1h is a common goal |
+| **Deployment rework rate** (DORA) | unplanned deploys made to fix a production incident ÷ total deploys | ↓ | Trend down |
 | **Flake rate** | flaky test runs ÷ total test runs (a flake = pass and fail on the same commit) | ↓ | < 1%; quarantine above |
 | **Mutation score** | mutants killed ÷ total mutants introduced (test-suite effectiveness, via a mutation tool) | ↑ | 60–80% on critical modules |
-| **Change-failure rate** | deploys causing a failure/rollback ÷ total deploys | ↓ | Elite: 0–15% |
 | **CI feedback time** | wall-clock time from push → merge-gate result | ↓ | PR gate < 10 min |
 | **Critical-path coverage** | critical journeys with passing automated E2E ÷ total critical journeys | ↑ | 100% |
+
+DORA metrics are throughput (lead time, deployment frequency, recovery time) and
+instability (change fail rate, rework rate) — always report them together so no
+one optimizes speed at the cost of stability. DORA itself warns against fixed
+industry targets ("multiple deploys a day by year end"): set targets relative to
+the team's own baseline. The old "elite / high / medium / low" cut-offs vary by
+year's report; don't quote them as standards.
 
 Notes:
 - **Coverage % (line/branch)** is a diagnostic, not a goal. Gate coverage *on
