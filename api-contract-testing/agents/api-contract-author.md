@@ -22,7 +22,7 @@ authoritative. Detailed code, config, and commands live in
 3. **Scaffold the tests** in the project's language/framework:
    - Consumer tests generating pacts with shape/type matchers.
    - Provider verification with provider states for setup.
-   - Or spec conformance (Schemathesis/Dredd) + a spec lint (Spectral).
+   - Or spec conformance (Schemathesis) + a spec lint (Spectral).
 4. **Add the gates.** Wire `can-i-deploy` (Pact) or a breaking-change diff
    (`oasdiff` / GraphQL Inspector) into CI as blocking steps, per the skill's CI
    wiring.
