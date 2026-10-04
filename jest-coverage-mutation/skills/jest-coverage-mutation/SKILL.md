@@ -32,8 +32,11 @@ coverage % alone.
   source (e.g. `>` → `>=`, `+` → `-`, `true` → `false`, remove a statement) and
   re-runs the tests. If a test fails, the mutant is **killed** (good). If tests
   still pass, the mutant **survived** — a real bug would have slipped through.
-- **Mutation score** = killed / (killed + survived), ignoring no-coverage and
-  invalid mutants. This is your real test-effectiveness metric.
+- **Mutation score** = detected / valid = (Killed + Timeout) / (Killed + Timeout
+  + Survived + NoCoverage). Invalid mutants (CompileError, RuntimeError) and
+  Ignored ones are excluded. Stryker also reports a **covered** score that drops
+  NoCoverage from the denominator — quote the full score; the covered score
+  flatters suites with untested files. This is your real test-effectiveness metric.
 
 ## Workflow — coverage first, then mutation
 
@@ -58,9 +61,19 @@ coverage % alone.
 |--------|---------|--------|
 | **Killed** | A test failed on the mutant | None — this is the goal |
 | **Survived** | Mutant ran but no test failed | **Fix.** Add/tighten an assertion to catch it |
-| **NoCoverage** | Mutated code never executed | Add a test that exercises the path |
-| **Timeout** | Mutant caused a hang; runner aborted | Counts as killed — no action |
-| **RuntimeError / CompileError** | Mutant was invalid | Ignored in the score — no action |
+| **NoCoverage** | Mutated code never executed | Add a test that exercises the path (counts *against* the score) |
+| **Timeout** | Mutant caused a hang; runner aborted | Counts as detected — no action |
+| **RuntimeError / CompileError** | Mutant was invalid | Excluded from the score — no action (a TS checker turns these into CompileError cheaply) |
+| **Ignored** | Excluded by `ignoreStatic`, an ignorer, or a `// Stryker disable` comment | Excluded from the score — audit every one; each needs a written reason |
+
+### Equivalent mutants
+
+Some survivors are **equivalent**: the mutation does not change observable
+behavior (e.g. `i < len` → `i != len` in a loop that only ever increments), so no
+test *can* kill it. Prove it before claiming it — show why no input distinguishes
+the two. Then suppress that one mutant on that one line with a reason:
+`// Stryker disable next-line EqualityOperator: equivalent — i only increments`.
+Never disable a whole file or mutator to dodge real survivors.
 
 Watch the mutation score on the **modules you care about**, not a repo-wide
 average that hides weak hotspots.
@@ -68,11 +81,19 @@ average that hides weak hotspots.
 ## Keep it fast (mutation testing is expensive)
 
 - Scope with `mutate` globs to the code that matters; exclude generated/config.
-- Use Stryker **`--incremental`** to only re-test changed code between runs.
-- Use **`--since`** to mutate only what changed vs a git ref (great for PRs).
-- Set `coverageAnalysis: "perTest"` so each mutant only re-runs the tests that
-  covered it.
-- Tune `concurrency`; run full-repo mutation **nightly**, changed-files on PRs.
+- Use Stryker **`--incremental`** to reuse prior results and re-test only mutants
+  whose code or covering tests changed (cache `reports/stryker-incremental.json`).
+- On PRs, narrow further with **`--mutate`** fed from `git diff --name-only`
+  against the base branch (StrykerJS has **no** `--since` flag; `--mutate` also
+  accepts line ranges like `src/a.ts:10-40`).
+- Keep `coverageAnalysis: "perTest"` (the default) so each mutant only re-runs
+  the tests that covered it.
+- For TypeScript, enable the `typescript` checker so type-invalid mutants are
+  discarded before any test runs.
+- `ignoreStatic: true` skips static mutants (code run at module load, which force
+  a full test run each) — a big speed win, but they then count as Ignored; say so
+  in the report.
+- Tune `concurrency`; run full-scope mutation **nightly**, changed files on PRs.
 
 ## Anti-patterns — smells to reject
 
@@ -83,7 +104,9 @@ average that hides weak hotspots.
 | Excluding mutators or files to lift the score | Scope by risk, but never delete mutators to game the number |
 | `stryker.conf` `mutate` narrowed to already-green files | Mutate the logic-dense code, including where survivors live |
 | Removing or skipping tests to lift the number or pass the gate | Fix the tests; scope by risk, not by what is convenient to make pass |
-| Mutating the whole repo on every PR (30+ min) | `--since=origin/main --incremental` on PRs, full run nightly |
+| Mutating the whole repo on every PR (30+ min) | `--incremental --mutate <changed files>` on PRs, full run nightly |
+| `// Stryker disable all` or a file-level disable to hide survivors | Disable one line, one mutator, with a written equivalence reason |
+| Quoting the *covered* score while files sit at NoCoverage | Report the full mutation score; NoCoverage is a real gap |
 | Survived mutants triaged as "acceptable" and ignored | Each survivor = an uncaught bug; kill it or justify in writing |
 | Chasing the % — adding trivial tests to bump the number | Chase the **survivor**; a killed mutant is a real bug now caught |
 | Raising `break` down to whatever today's score is | Set `break` as a floor you won't regress below; ratchet **up** |
@@ -93,16 +116,18 @@ average that hides weak hotspots.
 ## CI wiring
 
 - **PRs stay fast:** always run `jest --coverage` (fails under `coverageThreshold`),
-  then `stryker run --since=origin/main --incremental` so only changed logic is
-  mutated. A 30-minute full mutation run does not belong on a PR.
+  then `stryker run --incremental --mutate <files changed vs base>` so only
+  changed logic is mutated. A 30-minute full mutation run does not belong on a PR.
 - **Gate on the mutation `break` threshold**, not just coverage — Stryker exits
   non-zero below it. Make both the coverage job and the Stryker job **required
   checks**; a red mutation gate blocks merge.
 - **Nightly full run:** `stryker run` across the committed scope catches drift and
-  survivors that a `--since` diff never touched. Publish the HTML report as an
+  survivors that a changed-files run never touched (e.g. a test deleted elsewhere). Publish the HTML report as an
   artifact.
-- **Cache** the incremental file (`reports/stryker-incremental.json`) and
-  `.stryker-tmp` between runs so PR mutation stays cheap.
+- **Cache** the incremental file (`reports/stryker-incremental.json`) between
+  runs so PR mutation stays cheap. Don't cache `.stryker-tmp` — it is a
+  throwaway sandbox. Incremental can't see changes to env vars, dependencies,
+  snapshots, or config, so the nightly run uses `--force`.
 - **Ratchet, don't relax:** raise `break` and per-directory `coverageThreshold`
   over time; never lower a gate to make a red build pass.
 

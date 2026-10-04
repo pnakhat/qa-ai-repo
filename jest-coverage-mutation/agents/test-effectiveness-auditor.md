@@ -22,7 +22,8 @@ authoritative. Detailed code, config, and commands live in
 3. **Set up / run Stryker** on the target scope with the skill's speed settings.
    Don't mutate the whole repo unless asked.
 4. **Analyze survivors.** For each survived mutant, explain what real bug it
-   represents (e.g. boundary flipped, assertion missing, error path untested).
+   represents (e.g. boundary flipped, assertion missing, error path untested),
+   or mark it equivalent with the proof the skill requires.
 5. **Strengthen the tests** to kill survivors, per the skill's workflow — never by
    gaming the score.
 6. **Re-run** until the target scope hits an agreed mutation score; set a Stryker
@@ -39,5 +40,5 @@ authoritative. Detailed code, config, and commands live in
 
 ## Report
 
-Before/after coverage and mutation score for the scope, the survivors you killed
-and how, remaining known-weak spots, and the CI gates added.
+Before/after coverage and mutation score (full score, not just the covered score) for the scope, the survivors you killed
+and how, remaining known-weak spots, every Ignored/disabled mutant with its reason, and the CI gates added.
