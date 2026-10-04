@@ -205,23 +205,100 @@ test.describe('Guest checkout', () => {
 });
 ```
 
-## API-seeded preconditions
+## Test data — create, track, tear down
 
-Use the `request` fixture to seed data via the API instead of through the UI when setting
-up preconditions — faster and more stable:
+Seed preconditions through the API (`request` fixture), not the UI. The fixture
+creates the data, hands it to the test, and deletes it afterwards — the code after
+`use()` runs whether the test passed or failed.
+
+`tests/fixtures/data.ts`:
 
 ```ts
-test('displays a previously placed order', async ({ page, request }) => {
-  const order = await request.post('/api/orders', {
-    data: { items: [{ sku: 'SKU-001', qty: 1 }] },
-    headers: { Authorization: 'Bearer ' + process.env.API_TOKEN },
+import { test as base, expect } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+
+// One id per run (set TEST_RUN_ID in CI so the sweeper can find a crashed run's data).
+const RUN_ID = process.env.TEST_RUN_ID ?? randomUUID().slice(0, 8);
+
+// Destructive setup/teardown only against allowlisted hosts — never prod or shared envs.
+const SAFE_HOSTS = (process.env.E2E_SAFE_HOSTS ?? 'localhost,127.0.0.1').split(',');
+function assertSafeTarget(baseURL: string | undefined) {
+  const host = new URL(baseURL ?? 'http://localhost').hostname;
+  if (!SAFE_HOSTS.includes(host)) throw new Error(`Refusing to seed or delete data on ${host}`);
+}
+
+type Customer = { id: string; email: string };
+type DataFixtures = {
+  uid: string;                                // unique per test + worker + run
+  track: (resourceUrl: string) => void;       // register anything the test creates
+  customer: Customer;
+};
+
+export const test = base.extend<DataFixtures>({
+  uid: async ({}, use, testInfo) => {
+    await use(`e2e-${RUN_ID}-w${testInfo.workerIndex}-${randomUUID().slice(0, 6)}`);
+  },
+
+  // Deletes every tracked resource, newest first, even when the test failed.
+  track: async ({ request, baseURL }, use) => {
+    assertSafeTarget(baseURL);
+    const created: string[] = [];
+    await use((url) => { created.push(url); });
+    for (const url of created.reverse()) {
+      const res = await request.delete(url);
+      expect([200, 204, 404]).toContain(res.status());   // 404: the test already deleted it
+    }
+  },
+
+  customer: async ({ request, uid, track }, use) => {
+    const res = await request.post('/api/customers', {
+      data: { email: `${uid}@example.test`, name: uid },
+    });
+    expect(res.ok()).toBeTruthy();
+    const customer: Customer = await res.json();
+    track(`/api/customers/${customer.id}`);
+    await use(customer);
+  },
+});
+
+export { expect } from '@playwright/test';
+```
+
+Merge it into `tests/fixtures/index.ts` (`mergeTests(pageFixtures, dataFixtures)`)
+so specs keep importing one `test`.
+
+```ts
+test('displays a previously placed order', async ({ page, request, customer, track }) => {
+  const res = await request.post('/api/orders', {
+    data: { customerId: customer.id, items: [{ sku: 'SKU-001', qty: 1 }] },
   });
-  const { id } = await order.json();
+  const { id } = await res.json();
+  track(`/api/orders/${id}`);                     // deleted before the customer
 
   await page.goto(`/orders/${id}`);
   await expect(page.getByText('SKU-001')).toBeVisible();
 });
 ```
+
+Notes:
+- Data that a whole worker shares (a per-worker account) goes in a
+  `{ scope: 'worker' }` fixture with the same create → `use` → delete shape; tests
+  may read it but must not mutate it.
+- **Sweeper** for orphans from crashed or cancelled runs — a scheduled CI job, scoped
+  by prefix and age, never by "everything":
+  ```sql
+  DELETE FROM customers WHERE email LIKE 'e2e-%' AND created_at < now() - interval '6 hours';
+  ```
+- **No-cleanup isolation** where the app supports it: create one tenant/org per run
+  in a setup project and delete the tenant in its teardown project
+  (`teardown: 'cleanup db'` in the setup project's config).
+- **Check the hygiene**:
+  ```bash
+  npx playwright test --repeat-each=2                  # second run must not trip on the first
+  npx playwright test --fully-parallel --workers=4     # no collisions between workers
+  npx playwright test -g "displays a previously placed order"   # passes alone
+  ```
+  Then query for the run's prefix (`e2e-$TEST_RUN_ID-`): zero rows left.
 
 ## Locator chaining & filtering
 

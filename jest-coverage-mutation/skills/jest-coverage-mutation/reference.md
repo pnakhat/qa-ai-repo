@@ -36,6 +36,56 @@ logic hides. `collectCoverageFrom` matters: without it, files with *no* tests ar
 invisible in the report. A threshold value can also be negative — `lines: -10`
 means "at most 10 uncovered lines" — handy for ratcheting a legacy directory.
 
+## Test isolation — mocks, timers, env, temp files
+
+`jest.config.js` additions:
+
+```js
+module.exports = {
+  clearMocks: true,     // wipe call history of every mock before each test
+  restoreMocks: true,   // put jest.spyOn originals back before each test
+  // resetModules: true // only if module-level singletons leak; slows the suite
+};
+```
+
+Per-test setup and teardown that runs even when the test fails:
+
+```js
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { exportReport } = require('../src/report');
+
+let dir;
+const savedEnv = { ...process.env };
+
+beforeEach(() => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'report-'));   // unique per test and worker
+  jest.useFakeTimers({ now: new Date('2026-01-15T10:00:00Z') });
+});
+
+afterEach(() => {
+  jest.useRealTimers();                                    // no fake clock leaks into the next test
+  process.env = { ...savedEnv };                           // undo env changes
+  fs.rmSync(dir, { recursive: true, force: true });        // delete exactly what this test made
+});
+
+test('writes a dated report file', () => {
+  process.env.REPORT_FORMAT = 'csv';
+  const file = exportReport({ rows: [{ sku: 'A', qty: 1 }] }, dir);
+  expect(path.basename(file)).toBe('report-2026-01-15.csv');
+});
+```
+
+Check order independence before trusting a mutation run:
+
+```bash
+npx jest --randomize                 # prints the seed; run twice
+npx jest --randomize --seed=1234     # replay a failing order
+npx jest --runInBand                 # compare against the parallel run
+npx jest --detectOpenHandles         # handles a test forgot to close
+```
+
 ## Stryker mutation testing (StrykerJS)
 
 Install (StrykerJS 10 needs Node.js ≥ 22; pin v9 on Node 20):

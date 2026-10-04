@@ -264,6 +264,11 @@ def test_empty_cart_total(cart):
     assert cart.total == 100               # ✅ true in any order
 ```
 
+The code after `yield` runs even when the test fails, so the teardown is not
+happy-path-only. Verify the fix the way the flake appeared:
+`pytest --count=2 -n 4` with pytest-randomly, pytest-repeat and pytest-xdist
+installed — shuffled, twice, in parallel — then confirm no carts are left behind.
+
 ### Recipe C — non-deterministic time → frozen clock
 
 **Before** — "expires in 7 days" is computed from the wall clock; fails across DST

@@ -153,6 +153,68 @@ Then('the order appears in her history', async ({ page, ctx }) => {
 });
 ```
 
+## Test data — Given steps over a seeding fixture
+
+`Given` steps ask a scenario-scoped `seed` fixture for data; the fixture creates it
+through the API, remembers every id, and deletes them after `use()` — which runs
+even when a step fails. `steps/fixtures.ts`, extended with `seed` (page-object
+fixtures from above omitted):
+
+```ts
+import { test as base, createBdd } from 'playwright-bdd';
+import { expect } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+
+const RUN_ID = process.env.TEST_RUN_ID ?? randomUUID().slice(0, 8);
+const SAFE_HOSTS = (process.env.E2E_SAFE_HOSTS ?? 'localhost,127.0.0.1').split(',');
+
+type Customer = { id: string; email: string };
+type Seed = { customer(tier: string): Promise<Customer> };
+type Ctx = { customer?: Customer };
+
+export const test = base.extend<{ seed: Seed; ctx: Ctx }>({
+  ctx: async ({}, use) => { await use({}); },
+  seed: async ({ request, baseURL }, use, testInfo) => {
+    const host = new URL(baseURL ?? 'http://localhost').hostname;
+    if (!SAFE_HOSTS.includes(host)) throw new Error(`Refusing to seed data on ${host}`);
+
+    const created: string[] = [];
+    const uid = () => `bdd-${RUN_ID}-w${testInfo.workerIndex}-${randomUUID().slice(0, 6)}`;
+
+    await use({
+      async customer(tier) {
+        const res = await request.post('/api/customers', {
+          data: { email: `${uid()}@example.test`, tier },
+        });
+        expect(res.ok()).toBeTruthy();
+        const c: Customer = await res.json();
+        created.push(`/api/customers/${c.id}`);
+        return c;
+      },
+    });
+
+    // Teardown: runs after the last step, pass or fail. Newest first.
+    for (const url of created.reverse()) await request.delete(url);
+  },
+});
+
+export const { Given, When, Then } = createBdd(test);
+```
+
+```ts
+// steps/membership.steps.ts — the step stays one line of glue
+Given('a {string} member', async ({ seed, ctx }, tier: string) => {
+  ctx.customer = await seed.customer(tier);
+});
+```
+
+Using hooks instead (when a team insists): `const { After } = createBdd(test)`
+and `After(async ({ seed }) => { ... })` — hooks receive fixtures, so the ids
+still come from the scenario's fixture, never a module-level array.
+
+Check it: `npx bddgen && npx playwright test --repeat-each=2 --fully-parallel`,
+then confirm nothing with the `bdd-$TEST_RUN_ID-` prefix is left.
+
 ## Data tables — many values of one kind in one step
 
 ```gherkin

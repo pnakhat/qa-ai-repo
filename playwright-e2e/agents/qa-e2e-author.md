@@ -81,9 +81,13 @@ Known tool quirks:
 7. **Verify under CI conditions.** `npx playwright test <spec> --repeat-each=3` green with no
    `--headed`, `--debug`, or `retries > 0` masking failures. On failure use `--trace on` and
    `npx playwright show-trace`.
+8. **Check data hygiene** per the skill's *Test data: setup and teardown* checks: every
+   record the specs create is torn down by a fixture, the suite passes twice in a row and
+   fully parallel, and no records with the run's prefix are left behind.
 
 ## Report
 
 Files added/changed (including the `specs/` plan), whether the built-in agents ran as delegated subagents or inline, journeys covered, locator and fixture patterns used, test run result
-(pass/fail count, any flakes), and any gaps that could not be automated — with the specific
+(pass/fail count, any flakes), the test data each spec creates and the fixture that tears it
+down (with the double-run/parallel result), and any gaps that could not be automated — with the specific
 reason (missing testid, auth wall, third-party dependency, etc.).

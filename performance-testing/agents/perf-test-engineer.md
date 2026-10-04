@@ -48,7 +48,8 @@ the `reference.md` file in the `performance-testing` skill's directory; Read the
 Deliver the scripts (k6 + Lighthouse config) and a results summary covering: the
 SLOs tested (with any `TBD`s and assumptions), the workload model (arrival
 rate/VUs, think time, ramp, cache state, endpoint mix), the environment and whether
-it's production-like, and per-scenario results — p50/p95/p99/max latency, error
+it's production-like, the test data provisioned and how `teardown()` removed it
+(rows left after the run: should be 0), and per-scenario results — p50/p95/p99/max latency, error
 rate at that load, throughput, and saturation. For stress, give the knee (safe
 capacity minus headroom) and the identified bottleneck; for soak, state whether
 latency/resources drifted (leak: yes/no) with the early-vs-late comparison. End

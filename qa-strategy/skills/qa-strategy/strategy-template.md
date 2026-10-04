@@ -47,7 +47,9 @@ quadrant deliberately left empty. Only those the intake justifies:
 ## 5. Automation strategy
 - What to automate first (high-risk + high-repetition) and what not to.
 - Recommended frameworks/tools (respect existing stack; justify changes).
-- Test data & environment management approach.
+- Test data & environment management: how tests create their own data, how
+  teardown runs (including on failure), isolation for parallel runs, the orphan
+  sweeper, and which environments never get destructive setup.
 - Standards: naming, structure, stable locators, no fixed sleeps, isolation.
 
 ## 6. CI/CD integration & quality gates

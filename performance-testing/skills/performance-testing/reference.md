@@ -148,6 +148,91 @@ add p(99) with `--summary-trend-stats`.
 
 ---
 
+## k6 — test data lifecycle
+
+`perf/checkout-data.js`. `setup()` provisions a pool before load starts,
+each VU uses its own account, every write carries the run id, and `teardown()`
+removes it all — also when a threshold fails the run. A run killed outright
+skips `teardown()`; the age-based sweeper below catches that.
+
+```js
+import http from 'k6/http';
+import exec from 'k6/execution';
+import { check, sleep } from 'k6';
+
+const BASE_URL = __ENV.BASE_URL || 'https://perf.example.com';
+const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;          // CI: the pipeline run id
+const PREFIX = `perf-${RUN_ID}`;
+const MAX_VUS = 200;
+const SAFE_HOSTS = (__ENV.PERF_SAFE_HOSTS || 'perf.example.com,localhost').split(',');
+const ADMIN = {
+  headers: { Authorization: `Bearer ${__ENV.ADMIN_TOKEN}`, 'Content-Type': 'application/json' },
+};
+
+export const options = {
+  setupTimeout: '2m',                                    // provisioning the pool takes a while
+  scenarios: {
+    peak: {
+      executor: 'constant-arrival-rate',
+      rate: 20, timeUnit: '1s', duration: '5m',
+      preAllocatedVUs: 100, maxVUs: MAX_VUS,
+    },
+  },
+  // Scoped to the load scenario: setup()/teardown() requests don't count toward the SLO.
+  thresholds: { 'http_req_duration{scenario:peak}': ['p(95)<300'] },
+};
+
+export function setup() {
+  const host = new URL(BASE_URL).hostname;
+  if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to provision data on ${host}`);
+
+  // One account per possible VU, so no two VUs mutate the same cart.
+  const accounts = [];
+  for (let i = 1; i <= MAX_VUS; i++) {
+    const res = http.post(`${BASE_URL}/api/test-accounts`,
+      JSON.stringify({ email: `${PREFIX}-u${i}@example.test` }), ADMIN);
+    if (res.status !== 201) exec.test.abort(`pool provisioning failed: ${res.status}`);
+    accounts.push({ id: res.json('id'), token: res.json('token') });
+  }
+  return { accounts };                                   // passed to default() and teardown()
+}
+
+export default function (data) {
+  const account = data.accounts[exec.vu.idInTest - 1];
+  const ref = `${PREFIX}-v${exec.vu.idInTest}-i${exec.scenario.iterationInTest}`;
+  const res = http.post(`${BASE_URL}/api/checkout`,
+    JSON.stringify({ sku: 'SKU-001', qty: 1, clientRef: ref }),   // tagged with the run id
+    { headers: { Authorization: `Bearer ${account.token}`, 'Content-Type': 'application/json' },
+      tags: { name: 'POST /api/checkout' } });
+  check(res, { 'checkout 201': (r) => r.status === 201 });
+  sleep(Math.random() * 5 + 3);
+}
+
+export function teardown(data) {
+  // Orders created by VUs never reach teardown (VUs share no memory), so delete them
+  // by the run tag; then delete the pool setup() created. Nothing else is touched.
+  const orders = http.del(`${BASE_URL}/api/test-data/orders?clientRefPrefix=${PREFIX}`, null, ADMIN);
+  check(orders, { 'run orders deleted': (r) => r.status === 204 });
+  for (const a of data.accounts) http.del(`${BASE_URL}/api/test-accounts/${a.id}`, null, ADMIN);
+}
+```
+
+- `/api/test-data/*` and `/api/test-accounts` stand for whatever your service
+  exposes to tests (an admin API, or a SQL script run by the pipeline); keep them
+  disabled outside test environments.
+- **Pre-provisioned pool instead of `setup()`**: for large pools, a seed script
+  creates them once (idempotent on email), writes `accounts.csv`, and the test
+  reads it with `SharedArray`. The accounts stay; the script resets their state and
+  `teardown()` still deletes the run's writes.
+- **Sweeper** (scheduled, catches killed runs):
+  ```sql
+  DELETE FROM orders WHERE client_ref LIKE 'perf-%' AND created_at < now() - interval '12 hours';
+  ```
+- **Check it**: run twice back to back with the same `RUN_ID` scheme and compare
+  p95; then `SELECT count(*) FROM orders WHERE client_ref LIKE 'perf-<run>-%'` → 0.
+
+---
+
 ## k6 — stress variant (find the knee)
 
 `perf/stress.js`. Push **past** expected peak in steps until latency/error climbs,

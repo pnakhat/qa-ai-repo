@@ -42,6 +42,12 @@ covered lower down.
 ## 6. Cross-cutting
 Performance/load, security (SAST/DAST/deps), accessibility — owners and cadence.
 
+## 6a. Test data & environments
+Per layer: where the data comes from (in-memory builders, Testcontainers, provider
+states, API-seeded fixtures), how it is torn down (rollback, delete in fixture
+teardown, disposable stack), how ids stay unique across parallel workers, the
+orphan sweeper, and which environments are off-limits to destructive setup.
+
 ## 7. Target shape & current gap
 Chosen model: pyramid / trophy / honeycomb — and why (architecture evidence).
 | Level (size) | Target % | Now (count) | Now (CI minutes) | Action |

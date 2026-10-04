@@ -92,9 +92,39 @@ usage in a consumer test.
 - **Backward compatibility is the rule**: additive changes are safe; removing a
   field, tightening a type, or changing status codes is breaking — version it.
 - **Provider states** replace shared fixtures — each interaction declares the
-  state it needs; keep them cheap and isolated.
+  state it needs; keep them cheap and isolated (rules below).
 - **Gate deploys**, don't just report. A contract test that doesn't block a bad
   release is documentation, not a test.
+
+## Test data: setup and teardown
+
+Contract runs touch real provider data in two places: provider-state handlers and
+spec fuzzing. Code in `reference.md` (provider verification; Schemathesis).
+
+- **Consumer side holds no data.** The Pact mock serves the interaction; nothing
+  to seed or clean. Don't point consumer tests at a real provider "to be safe".
+- **Each provider state sets up exactly its data and tears it down.** Use the
+  handler's `setup` *and* `teardown` (Pact calls teardown after each interaction,
+  pass or fail). Track the ids the setup created and delete those; a state must
+  never depend on what an earlier interaction left behind.
+- **Verify against an isolated provider DB** — Testcontainers, an in-memory
+  store, or a per-run schema owned by the verification. Because examples carry
+  fixed ids (`given('an order exists', { id: 42 })`), a shared DB would collide
+  across parallel builds; an isolated one makes those ids safe.
+- **Schemathesis runs against throwaway data.** It creates, mutates, and deletes
+  records with generated inputs: start the provider with a fresh DB per run
+  (`docker compose -p <run-id> up`), point it at a test tenant/credentials, and
+  drop the whole stack afterwards (`down -v`, in an always-run step). Never at
+  shared staging data or production.
+- **Idempotent state setup** (upsert, not insert-and-hope) so a re-run or a
+  retried interaction doesn't fail on a duplicate key; if a shared per-team
+  environment is unavoidable, prefix created data with the run id and sweep it by
+  age.
+- **Guard by environment**: state handlers and fuzz runs refuse to start unless
+  the target DB/URL is on a test allowlist.
+- **Prove it**: verification passes twice in a row against the same DB, a single
+  interaction verifies alone (`PACT_DESCRIPTION="<description>"`), and the DB is
+  empty of state data afterwards.
 
 ## Anti-patterns — smells to reject
 
@@ -107,6 +137,10 @@ usage in a consumer test.
 | Tightening a field / making it required and shipping quietly | That's a **breaking change** — bump the version, run `oasdiff breaking` |
 | Removing a field consumers use, trusting nobody noticed | Provider verification against published pacts catches it — run it |
 | Shared global fixture the whole suite mutates | Per-interaction **provider states** (`given(...)` → state handler) |
+| Provider state with `setup` only, so data piles up and later interactions see it | `setup` + `teardown` per state, deleting the ids the setup created |
+| Provider state that only works if an earlier interaction ran first | Each state seeds everything its interaction needs |
+| Provider verification against a shared staging DB | Testcontainers / per-run schema owned by the verification |
+| Relying on a DB reset script that CI never runs | Teardown in the state handler; a disposable DB per run |
 | Consumer test asserting on the Pact mock's own response | Drive your **real client code**; assert on what the client parsed |
 | Provider verifies only local pact files | Pull from the broker with `consumerVersionSelectors` (main + deployed) |
 | A new consumer pact turns the provider's main build red | `enablePending: true` (+ `includeWipPactsSince`) so un-verified pacts report without failing |

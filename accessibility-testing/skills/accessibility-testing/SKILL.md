@@ -62,6 +62,25 @@ one browser smoke for the assembled page. See `reference.md` for full code.
   `page.emulateMedia({ reducedMotion: 'reduce' })` tests the reduced-motion path.
   These still don't replace a screen-reader pass.
 
+## Test data: setup and teardown
+
+Most scans only read a page. Scans of states that need data — a filled cart, a
+form's error state after submit, a populated table — create it, and then the
+same rules as any E2E test apply. Code in `reference.md` (seeded-state scan).
+
+- **Seed the state through the API in a fixture**, not by clicking through
+  other pages, and never by borrowing whatever a shared account happens to hold.
+- **Unique per test/worker** (run id + worker index + random suffix) so parallel
+  scans don't edit each other's cart.
+- **Delete what the fixture created after `await use()`** — that runs when the
+  axe assertion fails too. Never wipe shared tables.
+- **Mock third-party widgets and feeds** at the boundary when the scan is about
+  your markup; it needs no cleanup.
+- **Component-level scans** (`jest-axe`) unmount between tests — keep Testing
+  Library's automatic `cleanup` on; don't render into a shared container.
+- **Guard by environment**: seeding fixtures refuse production; a production
+  a11y smoke is read-only.
+
 ## The manual checklist — where the real bugs are
 
 Walk these for every key flow. `reference.md` has the copy-pasteable long form
@@ -157,6 +176,7 @@ already has correctly.
 | Color-only error/required indication | Add text + `aria-invalid`/`aria-describedby`; don't rely on red alone |
 | `aria-hidden="true"` on a focusable node | Remove focusability too, or drop the `aria-hidden` |
 | Custom widget with no keyboard support | Implement the WAI-ARIA Authoring Practices keyboard pattern, or use native |
+| Scanning the cart of a shared seed account that other tests change | Seed a unique cart in a fixture, scan, delete it after `use()` |
 
 ## Guardrails
 

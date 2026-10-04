@@ -46,7 +46,10 @@ inventory commands.
 5. **Flag UI-driven setup.** Logging in, seeding data, or navigating through the
    UI just to reach a state = move to programmatic/API setup or fixtures; it's not
    what the test verifies.
-6. **Report** with `audit-report-template.md`: inventory, overuse findings ranked
+6. **Check test-data hygiene** (section below): flag tests that create data
+   with no teardown, clean up only on the happy path, or lean on shared seed
+   records. A demoted test inherits these problems unless the plan fixes them.
+7. **Report** with `audit-report-template.md`: inventory, overuse findings ranked
    by cost saved, per-test recommendation with reasoning, the target counts, and
    a migration plan.
 
@@ -66,6 +69,25 @@ land instead. The demotion **relocates** the assertion — it never deletes it.
 | **Pagination / filter / sort / search matrix** exercised by clicking through pages | API test asserting the query params return the right set; 1 UI test that a list renders |
 | **One mega-test asserting many unrelated things** | Split: keep the browser-specific part at UI, push each data/logic assertion to its own API/unit test |
 | **Duplicate step sequences** across tests differing only by input constants | Collapse into one parameterized API test; the steps were incidental |
+
+## Test data: setup and teardown (audit check)
+
+Overused UI suites usually also leak data. Flag each of these per file, name the
+fix, and carry the fix into the target test when you demote (see the
+*Test-data hygiene* commands in `reference.md`):
+
+| Finding | Fix to recommend |
+|---------|------------------|
+| Test creates records (UI form, API call, SQL) and nothing deletes them | Fixture/`afterEach`/`finally`/`yield` teardown deleting the ids it created |
+| Cleanup as the last lines of the test body — skipped when an assertion fails | Move it into teardown that always runs |
+| Shared seed user/record (`admin@example.com`, `order 1001`) that tests mutate | Per-test data created through the API with unique per-worker ids |
+| Test depends on data another test created, or on suite order | Each test seeds its own preconditions |
+| `beforeAll`/`setUpClass`/`BeforeAll` data mutated by many tests | Per-test setup; class/suite data read-only |
+| `TRUNCATE`/"delete all" in teardown, or a DB reset script CI never runs | Delete tracked ids only; ephemeral DB or per-run tenant; age-based sweeper |
+| Setup/teardown that would run against a shared or production URL unguarded | Environment allowlist in the fixture |
+
+A suite that passes once but fails on an immediate re-run, or only with
+`workers=1`, is the runtime evidence — note it when CI data shows it.
 
 ## Scan procedure
 

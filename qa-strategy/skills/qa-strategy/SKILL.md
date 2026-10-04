@@ -88,6 +88,13 @@ very different strategies. Read the intake, then dial the rigor.
 - **Start where they are.** Recommend the next 2–3 improvements, not a rewrite.
 - **Risk drives coverage.** Concentrate effort where failures hurt most, not
   uniformly across the surface area.
+- **Test data and environments are a strategy decision, not a detail.** State
+  how each suite gets its data (created per test via API/factories, never shared
+  mutable seed users), how it is torn down (fixtures that run on failure,
+  rollback, disposable environments), how parallel runs stay apart (unique ids,
+  per-run tenants), and which environments are off-limits to destructive setup.
+  The gate: suites pass twice in a row, shuffled, and in parallel, and leave the
+  environment as they found it.
 
 ## Metrics that gate, not metrics that decorate
 
@@ -117,6 +124,7 @@ See `reference.md` for precise formulas.
 | `retries: 3` / manual re-runs to hide flake | Measure flake rate; quarantine + fix root cause |
 | Roadmap of aspirations with no owner/metric | Concrete first steps with an owner and a success metric |
 | Inventing intake answers to fill gaps | Mark `TBD`, state the assumption, ask to confirm |
+| Tests share one seeded staging DB and depend on a manual reset | Per-test data with teardown, disposable environments, a sweeper for orphans |
 
 ## Strategy vs. plan
 

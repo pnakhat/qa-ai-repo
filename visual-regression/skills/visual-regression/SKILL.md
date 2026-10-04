@@ -27,6 +27,26 @@ threshold, eliminate every source of nondeterministic pixels.
 | Caret blink, hover/focus bleed | Caret is hidden by default (`caret: 'hide'`); blur the active element and move the mouse away; capture a deliberate state, not an accidental one |
 | Scrollbars, cursor, third-party widgets | Hide them with a screenshot-only stylesheet via `stylePath` — applied during capture only, never changes app behaviour |
 
+## Test data: setup and teardown
+
+Pixels need the *same* data every run; the environment needs *no* data left
+behind. Code in `reference.md` → *Seeding / mocking dynamic data*.
+
+- **Mock at the boundary first.** `page.route` with a fixed payload gives
+  identical pixels and needs no cleanup — the default for visual tests.
+- **When a real backend must render the view**, each test seeds a fixed
+  dataset through the API in a fixture (never through the UI, never relying on
+  whatever records the environment already holds) and deletes it after
+  `await use()`, which runs when the screenshot fails too.
+- **Unique ids, stable pixels.** Records still need per-test/worker unique
+  keys so parallel runs don't collide — keep them out of the rendered output
+  (fixed display names inside a per-test tenant/account), or `mask` them.
+- **Prefer no-cleanup isolation**: a per-run tenant or an ephemeral backend in
+  the same container stack that renders the baselines.
+- **Guard by environment** and never seed or snapshot against production data.
+- **Prove it**: `--repeat-each=3 --update-snapshots=none` (already the stability
+  check below) also runs fully parallel and leaves no seeded records behind.
+
 ## Baselines belong to CI, not your laptop
 
 macOS and Linux render fonts and anti-aliasing differently, so a baseline
@@ -164,6 +184,9 @@ reflexively update. Triage every diff into exactly one of three buckets:
 | Fonts not awaited, text captured mid-swap | `await document.fonts.ready` before capturing |
 | `waitForLoadState('networkidle')` / `waitForTimeout` as the readiness gate | Web-first assertion on the real content, then capture |
 | `--update-snapshots=all` to refresh one view | Target the spec with `-u` (`changed`) so passing PNGs aren't rewritten |
+| Snapshot of whatever records a shared environment happens to hold | Mock the API, or seed a fixed dataset per test and delete it after `use()` |
+| Seeded data shared by many visual tests, one of which edits it | Per-test seed; shared data stays read-only |
+| Unique test id (`e2e-8f3a…`) rendered in the shot | Fixed display values in an isolated tenant, or `mask` the id |
 
 ## CI wiring
 

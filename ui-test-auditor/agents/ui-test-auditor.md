@@ -25,10 +25,13 @@ the `audit-report-template.md` file in the `ui-test-auditor` skill's directory; 
    Demote-Unit per the skill's rubric (detail in the `detection-signals.md` file in the `ui-test-auditor` skill's directory).
 4. **Find repetition**: collapse data-only variations per the skill, and flag
    UI-driven login/seed/nav setup for relocation to programmatic/API fixtures.
-5. **Draft the conversions**: for each demotion, sketch the target API/unit test
+5. **Check test-data hygiene** per the skill's audit check: run the hygiene
+   commands in the `reference.md` file in the `ui-test-auditor` skill's directory, then read each hit to
+   confirm whether teardown exists and runs on failure.
+6. **Draft the conversions**: for each demotion, sketch the target API/unit test
    (name the endpoint/module) — use the before/after templates in the `reference.md` file in the `ui-test-auditor` skill's directory
    as the shape.
-6. **Write `UI-TEST-AUDIT.md`** using the `audit-report-template.md` file in the `ui-test-auditor` skill's directory: inventory,
+7. **Write `UI-TEST-AUDIT.md`** using the `audit-report-template.md` file in the `ui-test-auditor` skill's directory: inventory,
    ranked findings, a per-test table (file:line → currently asserts → verdict →
    move-to endpoint/module), the repetition groups, current vs target shape with
    estimated runtime/flake savings, and a Now/Next/Later migration plan.
@@ -42,5 +45,6 @@ the `audit-report-template.md` file in the `ui-test-auditor` skill's directory; 
 
 Path to `UI-TEST-AUDIT.md`, the headline overuse patterns, how many UI tests you
 recommend demoting vs keeping (with the target level for each group), the specific
-endpoints/units that must exist to receive the relocated coverage, and the estimated
+endpoints/units that must exist to receive the relocated coverage, the tests that
+create data without reliable teardown (count + worst offenders), and the estimated
 runtime/flake saved.

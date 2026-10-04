@@ -28,6 +28,9 @@ the `gherkin-style.md` file in the `playwright-bdd` skill's directory; Read them
    page objects; keep steps thin and stateless.
 6. **Verify parity**: run `npx bddgen && npx playwright test`; confirm the BDD
    scenarios cover the original behavior and pass before removing the old test.
+   Carry the old test's data setup *and* cleanup into fixtures (per the skill's
+   *Test data: setup and teardown*), and confirm the suite passes twice in a row
+   and fully parallel.
 
 ## Guardrails
 
@@ -37,6 +40,7 @@ the `gherkin-style.md` file in the `playwright-bdd` skill's directory; Read them
 
 Feature files created, page objects/steps added, the mapping from old tests to
 new scenarios, the parity run result (`bddgen && playwright test` pass/fail
-counts), which old specs were deleted vs kept, and any tests that couldn't be
+counts, plus the double-run/parallel result), how each scenario's data is seeded and
+torn down, which old specs were deleted vs kept, and any tests that couldn't be
 fully converted — with the specific reason (irreducible UI assertion, no domain
 vocabulary available, external dependency, etc.).

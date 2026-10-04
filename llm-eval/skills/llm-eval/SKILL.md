@@ -103,6 +103,31 @@ before the metrics, the same way you define SLOs before a load test.
 | Eval inputs disjoint from few-shot / fine-tune data | Grading on the same examples the prompt already contains |
 | Each run tagged with prompt + model + dataset version | Bare scores with no provenance, compared across weeks |
 
+## Test data: setup and teardown
+
+An eval has two kinds of data: the goldens it reads and the world the system
+under test acts on. Keep the first frozen and the second disposable. Code in
+`reference.md` → *Sandboxed tools for agent evals*.
+
+- **Goldens are versioned and read-only during a run.** Load them from git;
+  never write scores, generated outputs, or "fixed" labels back into the
+  dataset file — results go to a run artifact. CI fails if the run leaves the
+  dataset changed (`git diff --exit-code evals/data`).
+- **Each case gets a fresh sandbox for side effects.** Agent tools that write
+  (DB rows, files, tickets, emails, payments) run against a per-test sandbox —
+  a temp dir, a throwaway DB, fake outbox/payment clients — built in a
+  function-scoped fixture and torn down after `yield`, which runs when the
+  metric fails too. One case must never see what another case's agent did.
+- **Unique per case and worker** for anything that must touch a real test
+  backend (prefix with run id + golden `id`), and delete exactly those records.
+- **Pin the retrieval world**: RAG evals build their index from a versioned
+  corpus snapshot (per run, or read-only and shared), not the live index that
+  changes under you.
+- **Guard by environment**: eval agents get test credentials only; a tool
+  wired to production is a failed setup, not an eval.
+- **Prove it**: deterministic checks give identical results on two runs and
+  under `-n 4`, and the dataset and sandbox backends are unchanged afterwards.
+
 ## LLM-as-judge discipline — calibrate the ruler
 
 Most of these metrics *are* an LLM grading your LLM. That judge is a dependency
@@ -224,6 +249,9 @@ findings to the OWASP Top 10 for LLM Applications.
 | Prompt iterated against the same goldens that gate the release | Hold out a split; tune on dev goldens, gate on held-out ones |
 | Only friendly inputs in the golden set | Add an adversarial/safety slice (injection, jailbreak, PII, must-decline) |
 | Pairwise "A vs B" judged in one order only | Run both orders; count only order-consistent verdicts (position bias) |
+| Eval run writes outputs or corrected labels back into `goldens.json` | Goldens read-only; results to a run artifact; `git diff --exit-code evals/data` in CI |
+| Agent tool evals share one DB/workspace, so case N sees case N-1's writes | Function-scoped sandbox fixture, reset after `yield` |
+| Agent evals with tools pointed at real email/payment/prod APIs | Fakes or a test sandbox; test credentials only |
 
 ## Works well with
 

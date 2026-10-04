@@ -86,8 +86,8 @@ uses. Model it from real numbers.
 - **Measure only at steady state.** Discard the ramp-up window; JITs warm, pools
   fill, autoscalers settle. Report from the hold phase.
 - **Use realistic, varied test data.** Parameterize users, IDs, and payloads
-  (k6 `SharedArray` from CSV/JSON), give each VU its own account where state is
-  per-user, and clean up what the test creates.
+  (k6 `SharedArray` from CSV/JSON) across the working set — lifecycle rules in
+  *Test data: setup and teardown* below.
 - **Be explicit about cache state.** A cache-warm single URL benchmarks the cache,
   not the app. Decide deliberately: warm caches to measure typical load, or cold
   caches / varied keys to measure the worst case — and state which you did.
@@ -98,6 +98,36 @@ uses. Model it from real numbers.
 | Mixed endpoints in production proportions | Hammering one cheap cached endpoint |
 | Ramp → steady-state hold → measure the hold | Measure from t=0 including cold start |
 | Randomized inputs / cache keys across the working set | Same ID every request, served from cache |
+
+## Test data: setup and teardown
+
+A load test writes thousands of records; left behind, they grow the tables and
+skew the next run's baseline. Code in `reference.md` → *k6 — test data lifecycle*.
+
+- **Provision the data pool before load starts**, never inside the measured
+  window and never through the UI: a seed script (pool read from CSV via
+  `SharedArray`) or k6 `setup()` creating accounts/products through the API.
+  Size it to the working set and to `maxVUs`, so no two VUs share an account
+  unless contention *is* the scenario.
+- **Unique per VU and iteration**: tag every record a VU creates with the run id
+  plus `exec.vu.idInTest` / `exec.scenario.iterationInTest` (`perf-<run>-v12-i340`),
+  so concurrent runs and repeats never collide.
+- **Teardown deletes exactly what the run created.** `teardown()` runs once after
+  the load stages, also when thresholds fail the run. VUs don't share memory, so
+  ids created during load can't reach it: delete by the run-id tag (bulk
+  endpoint or SQL scoped to the prefix), then the pool `setup()` returned. Never
+  truncate tables in a shared environment.
+- **Prefer isolation that needs no cleanup**: a dedicated perf environment
+  restored from a snapshot before each run, or an ephemeral stack torn down after.
+- **Idempotent provisioning** (re-running the seed script reuses the pool) and an
+  age-based **sweeper** for runs killed before `teardown()`.
+- **Guard by environment**: `setup()` aborts (`exec.test.abort()`) unless
+  `BASE_URL` is on the perf allowlist — the data rules add to the "never load
+  production" rule, they don't relax it.
+- **Prove it**: two back-to-back runs give comparable numbers (a second run
+  that's slower because the first left data behind is a teardown bug), and after
+  the run no records with the run's tag remain. Keep thresholds scoped to the
+  load scenario so `setup()`/`teardown()` requests don't count toward the SLO.
 
 ## Thresholds as gates — a number that fails the run
 
@@ -218,6 +248,10 @@ Note the mean here might be ~70 ms and would have hidden that 1-in-100 users wai
 | Gating CI on lab INP | Lab can't measure INP on a page load — gate TBT, track INP in the field (RUM/CrUX) |
 | Load-testing production or a third-party API unannounced | Prod-like env with sign-off; stub/sandbox third parties |
 | Running the full soak on every commit | Perf is its own layer — smoke per-commit, load/soak nightly or pre-release |
+| Every VU logs in as the same seed user and mutates its cart | Provisioned pool, one account per VU (`exec.vu.idInTest`) |
+| Records created during load left in place, next run is slower | `teardown()` deletes by the run-id tag; compare back-to-back runs |
+| Cleanup script run by hand "after the test", skipped when it fails | `teardown()` in the script + an age-based sweeper |
+| Relying on an environment reset that the pipeline never runs | Snapshot restore or ephemeral stack as a pipeline step |
 
 ## Tool choice
 
@@ -249,6 +283,7 @@ These are soft complements — no hard dependency, but they compose well:
 
 See `reference.md` for a complete idiomatic k6 script (warm-up + peak scenarios,
 scoped p95/p99 thresholds, `dropped_iterations` gate, checks, custom Trend/Rate
-metrics, think time), stress/soak/spike variants, a Lighthouse CI config with
+metrics, think time), the test-data lifecycle (`setup()` pool, per-VU data,
+`teardown()` by run id), stress/soak/spike variants, a Lighthouse CI config with
 budgets and assertions, Gatling and JMeter equivalents, the metric formulas with
 worked numbers, and a CI job that fails the pipeline on a threshold breach.

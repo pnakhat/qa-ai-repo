@@ -55,6 +55,32 @@ coverage % alone.
 5. **Set thresholds and gate CI.** Fail the build below a mutation `break`
    threshold on the modules you've committed to; ratchet it up over time.
 
+## Test isolation: setup and teardown
+
+Stryker's `perTest` coverage runs only the tests that cover each mutant, in a
+different order and subset than `jest` does. A test that leaks state then passes
+or fails depending on what ran before it, and mutants survive or die for the
+wrong reason. Code in `reference.md` → *Test isolation*.
+
+- **Each test builds its own inputs** (builders/factories inside the test or a
+  `beforeEach`), never a module-level object that tests mutate, and never a
+  result another test produced.
+- **Reset doubles and globals after every test**: `restoreMocks: true` +
+  `clearMocks: true` in config (spies restored, call history cleared), fake
+  timers back to real (`jest.useRealTimers()` in `afterEach`), env vars and
+  singletons restored (`jest.isolateModules` / `jest.resetModules` for module
+  state).
+- **Teardown always runs**: `afterEach`/`afterAll` run when the test fails, so
+  cleanup goes there, not at the end of the test body. Close servers, DB
+  handles, and timers; `jest --detectOpenHandles` finds the ones you missed.
+- **Unique, disposable resources**: a temp dir per test (`fs.mkdtempSync`),
+  port `0`, in-memory fakes — no fixed file paths or ports shared by workers.
+- **No shared environments from a unit suite.** If a Jest suite reaches a real
+  DB, it's an integration test: a Testcontainers DB per run with per-test
+  transaction rollback, and a guard that refuses any non-test `DATABASE_URL`.
+- **Prove it**: `jest --randomize` passes twice with different seeds, and
+  `--runInBand` and parallel agree, before you trust a Stryker run.
+
 ## Interpreting Stryker results
 
 | Status | Meaning | Action |
@@ -112,6 +138,10 @@ average that hides weak hotspots.
 | Raising `break` down to whatever today's score is | Set `break` as a floor you won't regress below; ratchet **up** |
 | `coverageThreshold` set to 0 / removed to make CI pass | Keep the threshold; fix the tests, not the gate |
 | A test that can't kill any mutant | It's documentation, not verification — strengthen or remove it |
+| Module-level fixture object that several tests mutate | Build fresh inputs per test; `beforeEach`, not shared `const` |
+| Test passes only after another test set up a mock or global | Each test arranges its own doubles; `restoreMocks`/`clearMocks` in config |
+| `jest.useFakeTimers()` / `process.env.X = …` never undone | `afterEach` restores real timers and the saved env |
+| Cleanup at the end of the test body, skipped when an assertion throws | Put it in `afterEach`/`afterAll` |
 
 ## CI wiring
 

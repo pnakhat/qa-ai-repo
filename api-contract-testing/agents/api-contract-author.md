@@ -21,7 +21,8 @@ the `tooling.md` file in the `api-contract-testing` skill's directory; Read them
    spec-first, or both) and state your reasoning briefly.
 3. **Scaffold the tests** in the project's language/framework:
    - Consumer tests generating pacts with shape/type matchers.
-   - Provider verification with provider states for setup.
+   - Provider verification with provider states that set up *and* tear down their data
+     against an isolated provider DB.
    - Or spec conformance (Schemathesis) + a spec lint (Spectral).
 4. **Add the gates.** Wire `can-i-deploy` (Pact) or a breaking-change diff
    (`oasdiff` / GraphQL Inspector) into CI as blocking steps, per the skill's CI
@@ -32,6 +33,6 @@ the `tooling.md` file in the `api-contract-testing` skill's directory; Read them
 ## Report
 
 The files added/changed, approach chosen and why, the matcher/provider-state
-patterns used, the CI gates wired in (and confirmation they block, not just
+patterns used (and how state and fuzzing data are cleaned up), the CI gates wired in (and confirmation they block, not just
 report), local run results, and any follow-ups requiring a Pact Broker / PactFlow
 or a spec that doesn't exist yet.

@@ -118,11 +118,15 @@ Rules of thumb for consumer tests:
 
 ```ts
 import { Verifier } from '@pact-foundation/pact';
-import { startServer, stopServer, resetDb, seedConfirmedOrder } from '../../test/harness';
+import { startServer, stopServer, seedConfirmedOrder, deleteOrders } from '../../test/harness';
 
 describe('orders-service verifies its consumers', () => {
+  // startServer boots the real provider against a throwaway Postgres
+  // (Testcontainers) owned by this run — never a shared or staging DB.
   beforeAll(() => startServer(8080));
-  afterAll(() => stopServer());
+  afterAll(() => stopServer());            // stops the app and the container
+
+  const created: number[] = [];            // ids the current state's setup inserted
 
   it('honours every published consumer pact', () => {
     return new Verifier({
@@ -145,18 +149,20 @@ describe('orders-service verifies its consumers', () => {
       includeWipPactsSince: '2026-01-01',            // pick up un-verified feature-branch pacts
       publishVerificationResult: process.env.CI === 'true',   // never from a laptop
 
-      // Provider states: set up exactly the data an interaction needs.
+      // Provider states: set up exactly the data an interaction needs, and tear
+      // down exactly that data after it (teardown runs pass or fail).
       // Parameters from given(name, params) arrive as the handler argument.
       stateHandlers: {
         'an order exists': {
           setup: async (params) => {
-            await resetDb();
-            await seedConfirmedOrder({ id: params.id });
-            return { id: params.id };
+            const order = await seedConfirmedOrder({ id: params.id });  // upsert: idempotent
+            created.push(order.id);
+            return { id: order.id };
           },
-          teardown: async () => resetDb(),
+          teardown: async () => { await deleteOrders(created.splice(0)); },
         },
-        'no order exists': async () => resetDb(),
+        // Nothing to seed: the DB is private to this run and every state cleans up.
+        'no order exists': async () => {},
       },
     }).verifyProvider();
   });
@@ -164,8 +170,11 @@ describe('orders-service verifies its consumers', () => {
 ```
 
 Provider states replace shared fixtures: each `given(...)` string maps to a
-handler that seeds precisely that state, isolated per interaction — no global
-fixture the whole suite depends on.
+handler that seeds precisely that state and removes it afterwards, isolated per
+interaction — no global fixture the whole suite depends on. Check it: run the
+verification twice in a row against the same container, and verify one
+interaction alone with `PACT_DESCRIPTION="<description>" npx jest verify` (or
+`PACT_PROVIDER_STATE="an order exists"`).
 
 Verify against the **real provider code** (real routing, serialization,
 validation). Stub only the provider's own *downstream* dependencies (other
@@ -388,6 +397,23 @@ schemathesis run openapi.yaml \
 # archived in Nov 2024 and should not be adopted for new work):
 schemathesis run openapi.yaml --url http://localhost:8080 --phases examples
 ```
+
+Fuzzing creates and deletes records with generated inputs, so give each run its
+own provider and DB and throw both away afterwards — no cleanup code, nothing
+left in a shared environment:
+
+```bash
+export COMPOSE_PROJECT_NAME="st-${GITHUB_RUN_ID:-local}"  # unique stack per run
+docker compose up -d --wait                                # provider + fresh DB
+schemathesis run openapi.yaml --url http://localhost:8080 --checks all \
+  --header "Authorization: Bearer $TEST_TOKEN"
+status=$?
+docker compose down -v                                     # drop containers + DB volume
+exit $status
+```
+
+In GitHub Actions put `docker compose down -v` in its own step with
+`if: always()` so a failed run still tears down.
 
 v3 → v4 flag renames that break old scripts: `--base-url` → `--url`,
 `--hypothesis-max-examples` → `--max-examples`, `--junit-xml` →

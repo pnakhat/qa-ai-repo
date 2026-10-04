@@ -30,6 +30,11 @@ API/unit test + one UI smoke each. List each group and the merged target.
 Login/seed/navigate performed through the UI only to reach a precondition →
 programmatic/API setup or fixtures.
 
+## 4a. Test-data hygiene
+Per file: data created with no teardown, happy-path-only cleanup, shared seed
+records mutated, order dependence, wholesale truncation, unguarded environments
+→ the specific fix (fixture teardown, per-test API seeding, unique ids, sweeper).
+
 ## 5. What stays at the UI (and why)
 The small set of genuine browser journeys + rendering/interaction/a11y/visual
 tests that are correctly placed.

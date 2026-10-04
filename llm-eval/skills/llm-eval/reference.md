@@ -314,6 +314,44 @@ def test_agent_calls_right_tools(app):
 
 ---
 
+## Sandboxed tools for agent evals
+
+Agents that *act* need a fresh world per golden. Build it in a function-scoped
+fixture (in `evals/conftest.py`); the code after `yield` runs even when the
+metric fails, so no case inherits another case's writes.
+
+```python
+import sqlite3
+import pytest
+
+FIXTURE_ROWS = [("ORD-1", "shipped"), ("ORD-2", "pending")]   # fixed data the tools read
+
+@pytest.fixture
+def agent(tmp_path):
+    db = tmp_path / "tools.db"                       # unique per test; pytest owns the dir
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE orders (id TEXT PRIMARY KEY, status TEXT)")
+        conn.executemany("INSERT INTO orders VALUES (?, ?)", FIXTURE_ROWS)
+
+    from myapp import build_agent
+    from myapp.testing import FakeOutbox, FakePayments     # writes land in memory, not in the world
+    app = build_agent(db_url=f"sqlite:///{db}", outbox=FakeOutbox(), payments=FakePayments())
+    yield app
+    app.close()                                      # teardown: release handles; tmp_path is discarded
+```
+
+Use it in place of the session-scoped `app` for tool-calling evals
+(`def test_agent_calls_right_tools(agent): ...`). Assert on side effects too:
+`agent.outbox.sent` is a list you can check deterministically.
+
+Keep the goldens read-only — add to the CI job after the eval step:
+
+```bash
+git diff --exit-code evals/data/    # fails if the run modified the dataset
+```
+
+---
+
 ## Multi-turn — conversational metrics
 
 `evals/test_conversation.py`. A chatbot is judged over turns, not a single output.

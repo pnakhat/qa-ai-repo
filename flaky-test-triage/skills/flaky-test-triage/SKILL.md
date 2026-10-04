@@ -127,6 +127,28 @@ Fix the cause the taxonomy named. Recipes with before/after code in `reference.m
   contexts, and reset pools in teardown; cap worker concurrency if the leak is
   environmental.
 
+## Test data: setup and teardown
+
+Leaked test data is the most common *Shared state & ordering* flake: a test that
+reads a record another test created, a unique-key collision between workers, a
+row a crashed run left behind. The fix is the test-data rule in the suite's own
+skill (`playwright-e2e`, `playwright-bdd`, `jest-coverage-mutation`,
+`performance-testing`, `api-contract-testing` each carry a *Test data: setup and
+teardown* section). When triaging, check for:
+
+- **Order dependence on data**: green alone, red in the suite (or the reverse) →
+  the test consumes or collides with another test's records. Each test must
+  create its own data.
+- **Collisions in parallel or on re-run**: duplicate-key / "already exists"
+  errors, or fails only on the second run → identifiers aren't unique per test,
+  worker, and run.
+- **Cleanup that only runs on the happy path**: residue appears after a failed
+  run → move teardown into a fixture (`use()` / `yield` / `finally` /
+  `afterEach`) so it runs on failure, deleting the ids the test tracked.
+- **Orphans from crashed runs** → an age-based sweeper by run-id prefix.
+- **Proof of fix**: passes twice in a row, shuffled, and in parallel, and leaves
+  no records behind (Recipe B in `reference.md`).
+
 ## Anti-patterns — smells to reject
 
 | ❌ Smell | ✅ Fix |
@@ -142,6 +164,9 @@ Fix the cause the taxonomy named. Recipes with before/after code in `reference.m
 | "Just re-run CI until it's green" | Re-run *counts* as a flake data point, not a pass |
 | Shared global fixture mutated across tests | Per-test fresh state; isolate setup/teardown |
 | `beforeAll` seeding that later tests depend on | `beforeEach` per-test seed; no ordering assumptions |
+| Cleanup at the end of the test body, skipped when it fails | Teardown in a fixture/`afterEach`/`finally` that always runs |
+| Shared seed user that tests mutate | Data created per test with unique ids |
+| Relying on a DB reset that never runs in CI | Per-test teardown + an age-based sweeper |
 | Real third-party call in a unit/E2E happy-path | Mock what you don't own; isolate the live integration lane |
 | Screenshot assert during a transition | Disable animations; assert the settled state |
 | `Math.random()` / `Date.now()` in the assertion path | Seed RNG; freeze the clock |

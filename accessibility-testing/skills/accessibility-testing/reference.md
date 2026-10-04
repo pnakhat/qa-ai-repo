@@ -82,6 +82,32 @@ test('checkout page has no serious a11y violations', { tag: '@a11y' }, async ({ 
 });
 ```
 
+A scan that needs data seeds it in a fixture and removes it afterwards (the
+code after `use()` runs even when the axe assertion fails):
+
+```ts
+import { randomUUID } from 'node:crypto';
+import { test as a11yTest } from '../fixtures/a11y';
+
+const test = a11yTest.extend<{ cart: { id: string } }>({
+  cart: async ({ request }, use, testInfo) => {
+    const res = await request.post('/api/carts', {
+      data: { ref: `a11y-w${testInfo.workerIndex}-${randomUUID().slice(0, 6)}`,
+              items: [{ sku: 'SKU-001', qty: 2 }] },
+    });
+    const cart = await res.json();
+    await use(cart);
+    await request.delete(`/api/carts/${cart.id}`);
+  },
+});
+
+test('filled cart has no serious a11y violations', async ({ page, cart, checkA11y }) => {
+  await page.goto(`/cart/${cart.id}`);
+  await page.getByRole('heading', { name: 'Your cart' }).waitFor();
+  await checkA11y();
+});
+```
+
 ## `jest-axe` / `vitest-axe` — component test
 
 Assert at the component level, where the markup actually lives — cheapest and

@@ -241,6 +241,24 @@ rg -n -B1 -A3 'beforeEach|beforeAll|setUp\(|Background:|before\(:each\)'
 rg -n -i 'roles?\s*=|for.*role|as_(admin|user|viewer|editor)|login_as'
 ```
 
+### Test-data hygiene — creation without teardown
+
+```bash
+# Files that create data (API POST, SQL INSERT, factory create, provider state) ...
+rg -l -i 'request\.post|\.post\(|requests\.post|INSERT INTO|\.create\(|given\(.*exists' tests/e2e > /tmp/creates.txt
+# ... minus files with any teardown hook = candidates with no cleanup at all
+rg -l 'afterEach|afterAll|await use\(|yield|finally|tearDown|@After|AfterScenario|After\(|\bafter\(' tests/e2e > /tmp/teardown.txt
+grep -vxFf /tmp/teardown.txt /tmp/creates.txt
+
+# Wholesale cleanup and shared seed identities
+rg -n -i 'TRUNCATE|DELETE FROM \w+\s*;|deleteAll|resetDb|db:reset' tests/e2e
+rg -n -i '(admin|test|qa)@(example|test)\.(com|test)|seed(ed)?User' tests/e2e
+```
+
+A file with a teardown hook can still leak — open it and check the hook deletes
+what the test created and runs on failure (fixture after `use()`, `yield`,
+`finally`), not as the last line of the test body.
+
 Every file these surface is a read-and-classify candidate. Open the body, apply
 the rubric in `detection-signals.md`, and record the verdict + target endpoint/unit
 in `audit-report-template.md`.

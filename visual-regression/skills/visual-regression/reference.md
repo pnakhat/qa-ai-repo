@@ -178,6 +178,26 @@ test('feed is deterministic', async ({ page, stabilize }) => {
 });
 ```
 
+When the view must come from the real backend, seed fixed content in a fixture
+and delete it afterwards. The unique key keeps parallel workers apart; the
+rendered values stay fixed so the pixels don't change:
+
+```ts
+import { randomUUID } from 'node:crypto';
+
+export const test = base.extend<{ seededProject: { id: string } }>({
+  seededProject: async ({ request }, use, testInfo) => {
+    const key = `vr-w${testInfo.workerIndex}-${randomUUID().slice(0, 6)}`;   // never rendered
+    const res = await request.post('/api/projects', {
+      data: { externalKey: key, name: 'Website redesign', tasks: FIXED_TASKS },
+    });
+    const project = await res.json();
+    await use(project);
+    await request.delete(`/api/projects/${project.id}`);   // runs even if the screenshot failed
+  },
+});
+```
+
 ## Masking dynamic regions
 
 Mask what you can't freeze — keeps the rest of the frame strict.

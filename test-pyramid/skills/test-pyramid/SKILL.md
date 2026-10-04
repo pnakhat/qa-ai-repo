@@ -90,6 +90,7 @@ for a runnable example test at every level (plus a "push a test down" before/aft
 | Chasing a ratio (e.g. writing trivial units to "hit 70%") | The ratio is a symptom check; the rule is *lowest level that can prove the behavior* |
 | Forcing a pyramid onto a thin-logic UI or a mesh of tiny services | Pick trophy or honeycomb (step 4) and say why |
 | No static base — type errors and lint issues found by tests | Typecheck + lint as the cheapest gate, before any test runs |
+| Every layer shares one long-lived seeded staging DB that tests mutate and a reset job nobody runs | Per-layer isolation: in-memory → Testcontainers → provider states → API-seeded E2E data with teardown |
 
 ## CI wiring
 
@@ -127,6 +128,15 @@ stages. Each layer earns its place in the pipeline by speed and blast radius.
 - **Isolation + speed at the base**, realism concentrated at the seams, breadth
   only at the tip.
 - **Right-size to risk:** put the extra depth on revenue/safety-critical flows.
+- **Test data and environments are part of the plan.** Name, per layer, how a
+  test gets its data and how it is removed: unit builds inputs in memory;
+  integration uses an ephemeral DB (Testcontainers) with per-test rollback or
+  delete; contract provider states set up *and* tear down; E2E creates data via
+  the API in fixtures and deletes it afterwards, with unique per-worker ids and a
+  sweeper for orphans. Destructive setup never runs against shared or production
+  environments, and every suite must pass twice in a row, shuffled, and in
+  parallel. The tool skills (`playwright-e2e`, `api-contract-testing`,
+  `performance-testing`, …) hold the detailed rules.
 
 ## Works well with
 

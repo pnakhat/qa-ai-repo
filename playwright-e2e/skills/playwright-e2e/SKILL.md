@@ -44,7 +44,7 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 
 ## Structure & isolation
 
-- Every test is **fully independent**: sets up its own state, makes no assumptions about other tests, and passes in any order and in parallel.
+- Every test is **fully independent**: sets up its own state, makes no assumptions about other tests, and passes in any order and in parallel (see *Test data: setup and teardown*).
 - Use **fixtures** for shared setup: authenticated contexts, seeded data, storage state. Keep fixture files under `tests/fixtures/`.
 - Name spec files by **user journey**, not by page: `checkout-guest.spec.ts`, not `cart-page.spec.ts`.
 - **One journey per spec file**; a spec that covers ten unrelated flows makes failures hard to triage.
@@ -57,7 +57,18 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 - **Gitignore storage-state files** — they hold live session cookies/tokens. Read credentials from env vars/CI secrets, never commit them.
 - A test that **mutates server-side state of a shared account** (settings, cart, profile) must not share one storage state across parallel workers — use a per-worker account (worker-scoped fixture keyed on `testInfo.parallelIndex`) or API-seeded data unique to the test.
 - For tests that must start unauthenticated, override the fixture with an empty storage state — don't delete the default.
-- Prefer **API-seeded data** (via a `request` fixture) over UI-driven setup when setting up preconditions: faster, more reliable, and keeps the test focused on the user journey under test.
+
+## Test data: setup and teardown
+
+Non-negotiable for every spec that creates or changes server-side state. Code in `reference.md` → *Test data — create, track, tear down*.
+
+- **Each test creates the data it needs** through the API (`request` fixture), a DB helper, or a factory — never through the UI unless that UI is the thing under test — and never depends on pre-existing records or on another test's leftovers.
+- **Unique per test and worker.** Build names/emails from a run id + `testInfo.workerIndex` + a random suffix (`e2e-<run>-w3-a1b2c3`) so parallel workers, shards, and repeated runs never collide.
+- **Teardown always runs and deletes exactly what the test created.** Put create *and* delete in a fixture: the code after `await use(...)` runs even when the test fails. Track created ids and delete those; never truncate a shared table or "delete all orders". Cleanup written at the end of the test body is skipped by the first failing assertion.
+- **Prefer isolation that needs no cleanup**: a per-run tenant/org, an ephemeral environment or DB (per-PR env, Testcontainers), `page.route` mocks for third parties.
+- **Idempotent setup** (safe to re-run; create-or-reuse on the unique key) plus a scheduled **sweeper** that deletes data carrying the e2e prefix older than a few hours — a crashed or cancelled run leaves orphans no fixture teardown saw.
+- **Guard by environment.** Seeding and deleting run only against hosts on an allowlist (local, ephemeral, staging); the fixture refuses production and shared environments. Production runs stay read-only.
+- **Prove it**: the suite passes twice in a row (`--repeat-each=2`), a single test passes alone (`-g "<title>"`), the suite passes fully parallel (`--fully-parallel --workers=4`) — Playwright can't shuffle order, so alone + parallel is the order check — and afterwards no records with the run's prefix remain.
 
 ## Network interception
 
@@ -84,6 +95,11 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 | Hard-coded `http://localhost:3000` | `baseURL` in config / `process.env.BASE_URL` |
 | One spec file covering every page | One spec file per user journey |
 | Empty `expect` (no assertion in test) | Every test must have at least one assertion |
+| Shared seed user (`test@example.com`) whose cart/settings tests change | Per-test data from a fixture, or a per-worker account |
+| Test relies on records another test created (order-dependent) | Each test seeds its own data via `request` in a fixture |
+| Cleanup at the end of the test body / only on the happy path | Delete after `await use()` in the fixture — runs on failure too |
+| `beforeAll` data that many tests mutate | Per-test fixture; `beforeAll`/worker data stays read-only |
+| Relying on a DB reset script that CI never runs | Fixture teardown + a scheduled sweeper for orphans |
 
 ## CI wiring
 

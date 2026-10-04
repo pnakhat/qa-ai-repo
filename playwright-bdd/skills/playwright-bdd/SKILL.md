@@ -65,8 +65,35 @@ reader — leave them as plain Playwright specs in their own project.
   step then receives `{ page, <yourFixtures> }` and only instantiates what it uses.
 - Keep steps stateless; pass data between steps through a test-scoped fixture
   (e.g. `ctx`), never module globals — those leak across parallel scenarios.
-- Prefer fixtures over `Before`/`After` hooks for setup and teardown; reuse the
-  Playwright setup-project + `storageState` pattern for auth.
+- Prefer fixtures over `Before`/`After` hooks for setup and teardown (rules
+  below); reuse the Playwright setup-project + `storageState` pattern for auth.
+
+## Test data: setup and teardown
+
+A `Given` states a precondition; a fixture makes it true. Code in `reference.md`
+→ *Test data — Given steps over a seeding fixture*.
+
+- **Each scenario creates the data its `Given`s describe** through the API, a DB
+  helper, or a factory — never by clicking through the UI unless that UI is the
+  behavior under test — and never relies on pre-existing records or on what an
+  earlier scenario left behind.
+- **Unique per scenario and worker**: derive emails/names from a run id +
+  `testInfo.workerIndex` + a random suffix. `Examples` rows hold domain values
+  (`gold`, `$100`); the fixture turns them into unique records.
+- **Teardown always runs and deletes exactly what was created.** A seeding
+  fixture records each id it creates and deletes them after `await use()`, which
+  runs when a step fails too. If you must use an `After` hook, it reads the ids
+  from the scenario-scoped fixture (never module globals) and still runs on
+  failure. Never truncate shared tables.
+- **Prefer isolation that needs no cleanup**: per-run tenant, ephemeral
+  environment/DB, `page.route` mocks for third parties.
+- **Idempotent setup** and a scheduled **sweeper** that removes prefixed data
+  older than a few hours, for runs that crashed before teardown.
+- **Guard by environment**: the seeding fixture refuses production and shared
+  hosts; `@smoke` runs against production stay read-only.
+- **Prove it**: `bddgen && playwright test --repeat-each=2 --fully-parallel` is
+  green, a single scenario passes alone (`--grep "<scenario title>"`), and no
+  prefixed records remain afterwards.
 
 ## Principles
 
@@ -97,6 +124,11 @@ reader — leave them as plain Playwright specs in their own project.
 | `Background` longer than ~4 lines or with UI setup | Keep it to business context; move setup into fixtures |
 | One step hard-coded to one email/user | Parameterize: `Given a "<tier>" member` + `Examples` |
 | `.feature` named after a page (`cart-page.feature`) | Name after the capability (`checkout.feature`, `refunds.feature`) |
+| `Given a customer "ada@example.com"` — a shared seed user many scenarios mutate | `Given a gold member` → seeding fixture creates a unique customer per scenario |
+| Scenario passes only after another scenario created its data | Each scenario's `Given`s seed their own data |
+| Cleanup as the last `Then`/`When` step, skipped when a step fails | Delete after `use()` in the fixture (or an `After` hook reading fixture-tracked ids) |
+| `BeforeAll`/`BeforeWorker` data that many scenarios mutate | Per-scenario fixture; worker-level data stays read-only |
+| Relying on a DB reset script that CI never runs | Fixture teardown + a scheduled sweeper |
 
 ## CI wiring
 
