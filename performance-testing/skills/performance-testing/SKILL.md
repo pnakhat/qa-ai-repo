@@ -25,7 +25,7 @@ that lies.**
 | **Throughput (RPS)** | requests/sec the system sustains within SLO | Derive from real traffic; it's a result, not a knob |
 | **Saturation** | how full the resource is (CPU, memory, connection pool, queue depth) | Alert well before 100% — the knee is near saturation |
 | **LCP** (frontend) | Largest Contentful Paint — main content visible | "Good" ≤ 2.5 s at p75 of real users |
-| **INP** (frontend) | Interaction to Next Paint — responsiveness | "Good" ≤ 200 ms at p75 |
+| **INP** (frontend) | Interaction to Next Paint — responsiveness | "Good" ≤ 200 ms at p75 (field only; in lab, gate **TBT** as the proxy) |
 | **CLS** (frontend) | Cumulative Layout Shift — visual stability | "Good" ≤ 0.1 at p75 |
 
 **Why averages lie.** Mean latency is dominated by the fast majority and erased by
@@ -65,9 +65,17 @@ uses. Model it from real numbers.
 
 - **Derive concurrency from real traffic.** By Little's Law, `concurrent_users ≈
   arrival_rate × avg_session_duration`. If you serve 50 sessions/sec averaging 6
-  min, that's ~18,000 concurrent — size VUs or arrival rate to that, don't guess a
-  round number. Prefer an **arrival-rate** (open) model for request-driven APIs so
-  a slowing system doesn't accidentally reduce the load you apply.
+  min (360 s), that's 50 × 360 ≈ 18,000
+  concurrent — size VUs or arrival rate to that, don't guess a round number.
+- **Choose the load model deliberately.**
+
+  | Model | k6 executors | Use for | Trap |
+  |-------|-------------|---------|------|
+  | **Open** (arrival rate) | `constant-arrival-rate`, `ramping-arrival-rate` | Request-driven APIs, public traffic — users arrive regardless of how slow you are | Too few VUs → `dropped_iterations`; size VUs = rate × iteration time |
+  | **Closed** (fixed users) | `constant-vus`, `ramping-vus` | A fixed population: worker pools, call-centre agents, batch clients | **Coordinated omission** — as the server slows, each VU sends less, so load drops exactly when it matters and latency looks better than reality |
+
+  Default to the open model; gate `dropped_iterations` so an under-sized
+  generator can't silently deliver less load than the test claims.
 - **Include think time.** Real users read, type, and pause. Put `sleep()` between
   requests (typically 1–10 s, ideally randomized) so N VUs generate realistic RPS
   instead of a denial-of-service loop. Zero think time measures a different,
@@ -77,6 +85,9 @@ uses. Model it from real numbers.
   steady behavior.
 - **Measure only at steady state.** Discard the ramp-up window; JITs warm, pools
   fill, autoscalers settle. Report from the hold phase.
+- **Use realistic, varied test data.** Parameterize users, IDs, and payloads
+  (k6 `SharedArray` from CSV/JSON), give each VU its own account where state is
+  per-user, and clean up what the test creates.
 - **Be explicit about cache state.** A cache-warm single URL benchmarks the cache,
   not the app. Decide deliberately: warm caches to measure typical load, or cold
   caches / varied keys to measure the worst case — and state which you did.
@@ -139,6 +150,13 @@ LCP or an oversized bundle fails the PR:
   bottleneck instead of just observing slowness.
 - **State the caveats.** If the environment isn't prod-like, the result is a
   relative signal ("no regression vs last run") not an absolute capacity claim.
+- **Never load-test what you don't own without permission.** Don't point load at
+  production, a shared environment, or third-party APIs (payment, email, SMS,
+  maps) without sign-off and a scheduled window — stub or sandbox third parties,
+  and warn the owners of shared dependencies. Cloud/CDN WAFs may also block or
+  rate-limit the generator; allowlist it rather than "debugging" 403s at load.
+- **Keep secrets out of scripts.** Tokens and credentials come from `-e`/env and
+  CI secrets, never committed in the script.
 
 ## Frontend — lab vs field
 
@@ -158,9 +176,10 @@ Two complementary signals; you need both.
 ## Metric formulas
 
 - **Percentile p(x):** sort all N samples ascending; `p(x)` is the value at rank
-  `ceil(x/100 × N)`. p95 of 1000 sorted latencies = the 950th value — 95% of
-  requests were at or below it. Percentiles do **not** average across runs; merge
-  the raw samples or report each run.
+  `ceil(x/100 × N)` (nearest-rank; k6 and most tools interpolate, so expect tiny
+  differences). p95 of 1000 sorted latencies = the 950th value — 95% of
+  requests were at or below it. Percentiles do **not** average across runs or
+  across load generators; merge the raw samples or report each run.
 - **Error rate:** `failed_requests / total_requests`. "Failed" = non-2xx/3xx,
   timeouts, connection errors, or failed checks — decide the definition up front.
 - **Throughput (RPS):** `total_requests / duration_seconds`, reported from the
@@ -193,7 +212,24 @@ Note the mean here might be ~70 ms and would have hidden that 1-in-100 users wai
 | Benchmarking one cache-warm URL | Vary keys across the working set (or deliberately cold-cache) and mix endpoints in prod proportions |
 | Load generator pinned at 100% CPU | Isolate + size the generator; verify you're measuring the server, not the client |
 | Threshold that prints but doesn't fail | Use k6 `thresholds` / Lighthouse `assert` so a breach sets a non-zero exit and blocks CI |
+| Closed-model VUs on a request-driven API ("100 VUs, it held up fine") | Arrival-rate executors; a closed model throttles itself as latency rises (coordinated omission) |
+| `dropped_iterations` ignored | Threshold it (`count<1`); a run that couldn't deliver the load proves nothing about that load |
+| Thresholds evaluated over warm-up + ramp-down | Separate warm-up and peak scenarios; scope thresholds with `{scenario:peak}` |
+| Gating CI on lab INP | Lab can't measure INP on a page load — gate TBT, track INP in the field (RUM/CrUX) |
+| Load-testing production or a third-party API unannounced | Prod-like env with sign-off; stub/sandbox third parties |
 | Running the full soak on every commit | Perf is its own layer — smoke per-commit, load/soak nightly or pre-release |
+
+## Tool choice
+
+| Need | ✅ Default | Alternatives |
+|------|-----------|-------------|
+| HTTP/gRPC/WebSocket API load, JS/TS team | **k6** (`.js` or native `.ts`) | — |
+| JVM shop or existing simulations | **Gatling** (`injectOpen` + `assertions`) | Gatling JS/TS SDK |
+| Existing `.jmx` plans, exotic protocols (JDBC, JMS, LDAP) | **JMeter** in CLI mode, gated by parsing `statistics.json` | — |
+| Frontend vitals regression gate | **Lighthouse CI** assertions | WebPageTest |
+| Browser-level timings *under* load | k6 protocol load + a few `k6/browser` VUs | Playwright for single-user timings |
+
+Rules in this skill are tool-agnostic; syntax for each lives in `reference.md`.
 
 ## Works well with
 
@@ -211,7 +247,8 @@ These are soft complements — no hard dependency, but they compose well:
 
 ## Reference
 
-See `reference.md` for a complete idiomatic k6 script (ramp stages, p95/p99
-thresholds, checks, custom Trend/Rate metrics, think time), stress and soak
-variants, a Lighthouse CI config with budgets and assertions, the metric formulas
-with worked numbers, and a CI job that fails the pipeline on a threshold breach.
+See `reference.md` for a complete idiomatic k6 script (warm-up + peak scenarios,
+scoped p95/p99 thresholds, `dropped_iterations` gate, checks, custom Trend/Rate
+metrics, think time), stress/soak/spike variants, a Lighthouse CI config with
+budgets and assertions, Gatling and JMeter equivalents, the metric formulas with
+worked numbers, and a CI job that fails the pipeline on a threshold breach.

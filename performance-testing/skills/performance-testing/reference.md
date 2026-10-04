@@ -2,7 +2,14 @@
 
 Runnable, copy-pasteable k6 scripts, Lighthouse CI budgets, metric formulas, and
 CI wiring. Check installed tool versions for drift; the shapes below target
-**k6 v0.50+** and **@lhci/cli v0.13+ / Lighthouse v11+**.
+**k6 v1.x / v2.x** (verified against 2.3) and **@lhci/cli v0.15 / Lighthouse
+v12+**. k6 runs `.ts` scripts natively since v1.0 — rename any file below to
+`.ts` and add types; no bundler needed.
+
+k6 v2 removed: `--no-summary` (use `--summary-mode=disabled`), the
+`externally-controlled` executor, `k6 login`, and `k6 cloud script.js` (now
+`k6 cloud run script.js`). Lighthouse 12 removed native `budgets`; use the
+`resource-summary:*` assertions shown below instead.
 
 ## Install
 
@@ -11,8 +18,7 @@ CI wiring. Check installed tool versions for drift; the shapes below target
 brew install k6                       # or: https://grafana.com/docs/k6/latest/set-up/install-k6/
 
 # Frontend web-vitals in CI
-npm i -D @lhci/cli                     # Lighthouse CI runner + assertions
-npx playwright install chromium        # or rely on system Chrome
+npm i -D @lhci/cli                     # Lighthouse CI runner + assertions (uses the runner's Chrome)
 ```
 
 ## Project layout
@@ -23,7 +29,6 @@ perf/
   stress.js            # ramp past peak to find the knee
   soak.js              # hours at moderate load — leak detection
   spike.js             # sudden surge, then drop
-  lib/config.js        # shared BASE_URL, headers, SLO thresholds
 lighthouserc.json      # frontend budgets + assertions
 .github/workflows/perf.yml
 ```
@@ -40,55 +45,63 @@ import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { Trend, Rate, Counter } from 'k6/metrics';
 
-// --- Config (override at run time: k6 run -e BASE_URL=https://staging.example.com) ---
+// --- Config (override at run time: k6 run -e BASE_URL=... -e RATE=20) ---
 const BASE_URL = __ENV.BASE_URL || 'https://staging.example.com';
+const RATE = Number(__ENV.RATE || 20);   // ITERATIONS (user journeys) per second, not requests
 
 // --- Custom metrics: measure business-meaningful timings/rates, not just HTTP ---
 const checkoutLatency = new Trend('checkout_latency', true); // true = time metric (ms)
 const businessErrors  = new Rate('business_errors');         // logical failures, not just 5xx
 const ordersCreated   = new Counter('orders_created');
 
+// VU sizing (Little's Law): VUs needed = arrival rate × iteration duration.
+// One iteration ≈ 2 requests + 5–13 s of think time ≈ 10 s, so 20 it/s needs
+// ~200 VUs. Too few VUs → k6 drops iterations and you silently under-load.
+const VUS = Math.ceil(RATE * 10 * 1.25);
+
 export const options = {
-  // Open model: k6 injects requests at a target ARRIVAL RATE, independent of how
-  // slow the system gets — so a degrading server doesn't silently reduce load.
+  // Open model: k6 starts iterations at a target ARRIVAL RATE, independent of how
+  // slow the system gets — so a degrading server doesn't silently reduce load
+  // (the closed-model "coordinated omission" trap).
   scenarios: {
-    steady_load: {
+    warmup: {                                 // JIT, pools, caches, autoscaling settle
       executor: 'ramping-arrival-rate',
-      startRate: 0,
-      timeUnit: '1s',
-      preAllocatedVUs: 200,   // pool sized from Little's Law; raise if VUs saturate
-      maxVUs: 500,
-      stages: [
-        { target: 200, duration: '2m' },  // ramp 0 → 200 req/s (warm-up, discarded)
-        { target: 200, duration: '5m' },  // HOLD at expected peak — measure this window
-        { target: 0,   duration: '1m' },  // ramp down
-      ],
+      startRate: 0, timeUnit: '1s',
+      preAllocatedVUs: VUS, maxVUs: VUS * 2,
+      stages: [{ target: RATE, duration: '2m' }],
+    },
+    peak: {                                   // the window the SLOs are judged on
+      executor: 'constant-arrival-rate',
+      rate: RATE, timeUnit: '1s', duration: '5m',
+      startTime: '2m',                        // begins when warm-up ends
+      preAllocatedVUs: VUS, maxVUs: VUS * 2,
     },
   },
   // --- Thresholds ARE the gate: any breach → non-zero exit → CI fails ---
+  // Scoped to {scenario:peak} so warm-up noise can't pass or fail the run.
   thresholds: {
-    // SLO: read/checkout p95 < 300 ms, p99 < 800 ms
-    http_req_duration: ['p(95)<300', 'p(99)<800'],
+    // SLO: p95 < 300 ms, p99 < 800 ms at expected peak
+    'http_req_duration{scenario:peak}': ['p(95)<300', 'p(99)<800'],
     // SLO: error rate < 0.1% at peak
-    http_req_failed: ['rate<0.001'],
+    'http_req_failed{scenario:peak}': ['rate<0.001'],
     // Custom: checkout path p95 < 500 ms, and <1% business-logic failures
-    checkout_latency: ['p(95)<500'],
+    'checkout_latency{scenario:peak}': ['p(95)<500'],
     business_errors: ['rate<0.01'],
     // Functional checks must hold under load
     checks: ['rate>0.99'],
+    // The load generator must actually deliver the modelled load
+    dropped_iterations: ['count<1'],
   },
 };
-
-// To exclude ramp-up noise from your reported numbers, tag the steady-state
-// window and filter on it in analysis (e.g. add {steady:'true'} tags during the
-// hold), or read k6's end-of-test percentiles knowing the short ramp barely moves
-// them at this sample size.
 
 const headers = { Accept: 'application/json' };
 
 export default function () {
   group('browse', () => {
-    const res = http.get(`${BASE_URL}/api/products?page=1`, { headers });
+    const res = http.get(`${BASE_URL}/api/products?page=1`, {
+      headers,
+      tags: { name: 'GET /api/products' },   // one URL bucket, not one per query string
+    });
     check(res, {
       'browse 200': (r) => r.status === 200,
       'browse has items': (r) => (r.json('items') || []).length > 0,
@@ -112,15 +125,26 @@ export default function () {
 }
 ```
 
+Notes:
+- `dropped_iterations` > 0 means the generator ran out of VUs (or CPU) and
+  delivered *less* load than modelled — raise `maxVUs` or add generators; the
+  latency numbers from that run are not valid for the target rate.
+- Tag dynamic URLs (`tags: { name: ... }`) or every `/orders/123` becomes its own
+  metric series and thresholds/summary become unreadable.
+- Use per-VU unique test data (`SharedArray` from a CSV/JSON of accounts and
+  SKUs) so you exercise the working set, not one cached row.
+
 Run it:
 
 ```bash
 k6 run -e BASE_URL=https://staging.example.com perf/load.js
-# Exits non-zero if any threshold breaches → the CI step fails.
+# Exit code 99 when a threshold breaches → the CI step fails.
 ```
 
-k6 prints p50/p90/p95/p99 for every trend automatically. Read the **hold-window**
-percentiles and the error rate together — never the average alone.
+The end-of-test summary lists every threshold with ✓/✗ and per-scenario
+values. Read the **peak-scenario** percentiles and the error rate together —
+never the average alone. k6's default trend stats are avg/min/med/max/p(90)/p(95);
+add p(99) with `--summary-trend-stats`.
 
 ---
 
@@ -154,8 +178,13 @@ export const options = {
   },
   // In a stress test you EXPECT to break SLO — don't hard-fail on latency.
   // Instead assert the system fails gracefully: it must not error-storm.
+  // abortOnFail stops the run once it's clearly broken, so you don't keep
+  // hammering a shared environment past the point of learning anything.
   thresholds: {
-    http_req_failed: ['rate<0.05'],   // <5% errors even while overloaded
+    http_req_failed: [
+      { threshold: 'rate<0.05', abortOnFail: true, delayAbortEval: '30s' },
+    ],
+    dropped_iterations: ['count<1'],  // past this point you're measuring k6, not the server
   },
 };
 
@@ -212,9 +241,55 @@ export default function () {
 ```
 
 Leak detection is about the **trend**, not a single percentile: export
-time-series (`k6 run --out json=soak.json ...` or stream to Prometheus/InfluxDB)
+time-series (`k6 run --out json=soak.json ...`, `--out experimental-prometheus-rw`,
+or `--out opentelemetry`)
 and confirm p95 in the last 30 min ≈ p95 in the first 30 min. A steadily climbing
 line while load is flat = a leak; take it to the server's memory/GC graphs.
+
+---
+
+## k6 — spike variant (sudden surge)
+
+`perf/spike.js`. Jump to a multiple of peak in seconds, hold briefly, drop.
+Answers: does autoscaling react in time, do pools/queues absorb the burst, and
+does the system **recover** once the spike passes?
+
+```js
+import http from 'k6/http';
+import { check } from 'k6';
+
+const BASE_URL = __ENV.BASE_URL || 'https://staging.example.com';
+
+export const options = {
+  scenarios: {
+    spike: {
+      executor: 'ramping-arrival-rate',
+      startRate: 50, timeUnit: '1s',
+      preAllocatedVUs: 500, maxVUs: 3000,
+      stages: [
+        { target: 50,  duration: '2m' },   // normal traffic baseline
+        { target: 500, duration: '20s' },  // 10× surge in 20 s
+        { target: 500, duration: '2m' },   // hold the surge
+        { target: 50,  duration: '20s' },  // drop back
+        { target: 50,  duration: '3m' },   // recovery window — must return to baseline
+      ],
+    },
+  },
+  thresholds: {
+    http_req_failed: ['rate<0.02'],        // shed load gracefully (429/503 + Retry-After), not 500s
+  },
+};
+
+export default function () {
+  const res = http.get(`${BASE_URL}/api/products`, { tags: { name: 'GET /api/products' } });
+  check(res, { 'not 5xx': (r) => r.status < 500 });
+}
+```
+
+Compare p95 in the recovery window against the baseline window: a system that
+stays slow after the spike (stuck queues, exhausted pools, retry storms) fails
+the spike test even if it never errored. No `sleep()` here on purpose — under an
+arrival-rate executor the rate, not think time, sets the load.
 
 ---
 
@@ -240,10 +315,9 @@ vital or budget regresses. Median of several runs reduces lab noise.
     "assert": {
       "assertions": {
         "categories:performance":     ["error", { "minScore": 0.9, "aggregationMethod": "median-run" }],
-        "largest-contentful-paint":   ["error", { "maxNumericValue": 2500 }],
-        "interaction-to-next-paint":  ["error", { "maxNumericValue": 200 }],
-        "cumulative-layout-shift":    ["error", { "maxNumericValue": 0.1 }],
-        "total-blocking-time":        ["warn",  { "maxNumericValue": 300 }],
+        "largest-contentful-paint":   ["error", { "maxNumericValue": 2500, "aggregationMethod": "median-run" }],
+        "cumulative-layout-shift":    ["error", { "maxNumericValue": 0.1,  "aggregationMethod": "median-run" }],
+        "total-blocking-time":        ["error", { "maxNumericValue": 200,  "aggregationMethod": "median-run" }],
 
         "total-byte-weight":          ["error", { "maxNumericValue": 500000 }],
         "resource-summary:script:size":  ["error", { "maxNumericValue": 300000 }],
@@ -263,8 +337,53 @@ npx lhci autorun --config=lighthouserc.json
 # "error" assertions set a non-zero exit → CI fails. "warn" reports without failing.
 ```
 
-Lab (this) catches regressions deterministically; complement with **field** data
-(CrUX / RUM at p75) for what real users experience — gate CI on lab, track field.
+**INP is not measurable in a navigation run** — it needs real interactions.
+Lighthouse's lab proxy is **Total Blocking Time** (gated above). To lab-test INP
+for a specific interaction, script a Lighthouse *user flow* (timespan mode via
+Puppeteer) or use a `k6/browser` test and threshold `browser_web_vital_inp`.
+
+Lab numbers depend on the runner: `preset: "desktop"` vs the default mobile
+emulation (simulated slow 4G + 4× CPU throttle) give very different results, and
+shared CI runners are noisy — that's why `numberOfRuns: 5` + `median-run`.
+Lab (this) catches regressions; complement with **field** data (CrUX / RUM at
+p75) for what real users experience — gate CI on lab, track field.
+
+---
+
+## Other tools — same rules, different syntax
+
+Use what the repo already has; the SLO-first, percentile, open-model and
+gate-the-build rules apply unchanged.
+
+**Gatling** (3.x; Java/Kotlin/Scala DSLs plus a JavaScript/TypeScript SDK).
+Open vs closed is explicit in the injection DSL — prefer `injectOpen` for
+request-driven APIs. `assertions` fail the build (non-zero exit):
+
+```java
+setUp(
+  scn.injectOpen(
+    rampUsersPerSec(0).to(20).during(Duration.ofMinutes(2)),
+    constantUsersPerSec(20).during(Duration.ofMinutes(5))
+  )
+).protocols(httpProtocol)
+ .assertions(
+   global().responseTime().percentile(95.0).lt(300),
+   global().responseTime().percentile(99.0).lt(800),
+   global().failedRequests().percent().lt(0.1)
+ );
+```
+
+**JMeter** (5.6.x). Build plans in the GUI, **run them in CLI mode only** — the
+GUI is not a load generator:
+
+```bash
+jmeter -n -t plan.jmx -l results.jtl -e -o report/   # non-GUI run + HTML dashboard
+```
+
+JMeter has no built-in pass/fail gate. Use the "Arrivals"/"Free-Form Arrivals"
+thread groups (jmeter-plugins) for an open model, and gate CI by parsing
+`report/statistics.json` (per-label `pct2ResTime` = p95 by default, `errorPct`)
+in a small script that exits non-zero on breach.
 
 ---
 
@@ -305,24 +424,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install k6
-        run: |
-          sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
-            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
-            | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update && sudo apt-get install -y k6
+      - uses: grafana/setup-k6-action@v1     # pin k6-version: for reproducible runs
+      - name: Smoke (script works, target is up)
+        run: k6 run --vus 2 --duration 30s -e BASE_URL=${{ vars.PERF_TARGET_URL }} perf/load.js
       - name: Run load test (thresholds gate the job)
-        run: k6 run -e BASE_URL=${{ vars.PERF_TARGET_URL }} perf/load.js
-        # k6 exits non-zero on any threshold breach → this step (and the job) FAILS.
+        run: |
+          k6 run -e BASE_URL=${{ vars.PERF_TARGET_URL }} \
+            --summary-trend-stats="med,p(95),p(99),max" \
+            --out json=k6-results.json perf/load.js
+        # k6 exits non-zero (99) on any threshold breach → this step (and the job) FAILS.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: k6-results, path: k6-results.json }
 
   lighthouse:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with: { node-version: 22, cache: npm }
       - run: npm ci
       - name: Lighthouse CI (assertions gate the job)
         run: npx lhci autorun --config=lighthouserc.json
@@ -340,7 +460,9 @@ release instead of being noticed in production.
 k6 run perf/load.js                                   # run with in-script defaults
 k6 run -e BASE_URL=https://staging.example.com perf/load.js
 k6 run --out json=soak.json perf/soak.js             # export time-series for trend/leak analysis
-k6 run --summary-trend-stats="p(50),p(95),p(99),max" perf/load.js  # force percentile output
+k6 run --summary-trend-stats="med,p(95),p(99),max" perf/load.js  # add p99 to the summary
+k6 run --vus 2 --duration 30s perf/load.js           # smoke: overrides scenarios for a quick sanity run
+k6 inspect perf/load.js                               # print the resolved options without running
 
 # Lighthouse CI
 npx lhci autorun --config=lighthouserc.json          # collect + assert (fails on error)
