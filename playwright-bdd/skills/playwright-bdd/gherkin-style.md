@@ -24,6 +24,10 @@ If a step names a selector, URL, button label, or keystroke, it's too low-level.
 - **When** — the single action or event under test.
 - **Then** — the observable business outcome (what the user perceives), not DOM.
 - **And/But** — continue the previous clause; don't chain unrelated actions.
+- **Rule** (Gherkin 6+) — groups the scenarios that illustrate one business rule
+  under a `Feature`. Use it when a feature has several rules; each scenario is
+  then a concrete *example* of its rule (Example Mapping: rule → examples →
+  questions).
 
 ## Rules of thumb
 
@@ -34,7 +38,14 @@ If a step names a selector, URL, button label, or keystroke, it's too low-level.
   `Given a "gold" member` (Outline) to one scenario per member type.
 - **No test scaffolding in the prose** — ids, tokens, fixtures, timings belong in
   steps, not Examples meant for humans.
-- **Background** holds shared *business* preconditions, not UI setup.
+- **Background** holds shared *business* preconditions, not UI setup — keep it
+  to a few `Given` lines; if a reader must scroll back to understand a scenario,
+  inline the context instead.
+- **Many values of one kind → one step with a data table**, not a repeated step
+  per field.
+- **Don't assert what an action already proves.** If a scenario uses an
+  element, a separate "the button is visible" step is noise unless availability
+  is itself the behavior.
 - **Scenario count = behaviors**, not UI pages.
 
 ## Good example

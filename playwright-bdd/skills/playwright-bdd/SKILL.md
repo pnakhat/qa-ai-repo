@@ -37,22 +37,36 @@ method. If a non-engineer can't read the scenario, it's wrong.
 4. **Extract page objects.** Turn the raw steps into intent-level methods on a
    POM (`loginPage.signInAs(user)`, `cart.checkout()`). These carry the clicks.
 5. **Write step definitions** that bind each Gherkin step to a POM method via
-   fixtures (see `reference.md`) — thin glue, no assertions logic beyond calling
-   the object and checking outcomes.
+   fixtures (see `reference.md`) — thin glue. `Given`/`When` steps call POM
+   methods; `Then` steps make web-first `expect` assertions on locators/state the
+   POM exposes. No branching or loops in steps.
 6. **Parameterize data variations** as a `Scenario Outline` + `Examples`, where
    the examples are business-meaningful values (not test scaffolding).
 7. **Factor shared setup** into `Background` (business preconditions), and reuse
    steps across features — write them once, phrase them generically.
 8. **Verify parity.** Run `bddgen` then `playwright test`; the BDD suite must
-   cover the same behavior as the original before you delete it.
+   cover the same behavior as the original before you delete it. List the
+   original test's assertions and tick each one off against a `Then` — a
+   scenario that passes but asserts less is a coverage loss, not a conversion.
+9. **Carry over test metadata.** `test.skip/fixme/slow`, `{ tag }`, and
+   `test.describe.configure({ mode })` map to Gherkin tags (`@skip`, `@fixme`,
+   `@slow`, `@smoke`, `@mode:serial`); auth `storageState` and `test.use()`
+   options stay in project config or fixtures, not in the `.feature`.
+
+**Know when not to convert.** Pure API tests, visual snapshots, and low-level
+technical checks (headers, retries, error-boundary internals) have no business
+reader — leave them as plain Playwright specs in their own project.
 
 ## Wiring fixtures (summary — detail in `reference.md`)
 
-- Create typed Playwright fixtures for your page objects: `test = base.extend<...>({...})`.
-- Bind steps with `const { Given, When, Then } = createBdd(test)` so every step
-  receives `{ page, <yourFixtures> }`.
-- Keep steps stateless; pass state through fixtures or a `World`/custom fixture,
-  not module globals.
+- Extend `test` **imported from `playwright-bdd`** (not `@playwright/test`) with
+  typed page-object fixtures, and export it — generated files import it.
+- In the same file export `const { Given, When, Then } = createBdd(test)`; every
+  step then receives `{ page, <yourFixtures> }` and only instantiates what it uses.
+- Keep steps stateless; pass data between steps through a test-scoped fixture
+  (e.g. `ctx`), never module globals — those leak across parallel scenarios.
+- Prefer fixtures over `Before`/`After` hooks for setup and teardown; reuse the
+  Playwright setup-project + `storageState` pattern for auth.
 
 ## Principles
 
@@ -77,7 +91,10 @@ method. If a non-engineer can't read the scenario, it's wrong.
 | Multiple `When`s in one scenario | Split into multiple scenarios, or fold setup actions into `Given` |
 | Scenario titled `"Cart page"` or `"checkout-btn works"` | Title by behavior: `"Discount applied for gold members"` |
 | `Examples` table full of ids/tokens (`sku_88a1`, `usr_02`) | Use domain values: tier `gold`, order `$100`, total `$90` |
-| `expect(...)` assertion logic written in a step definition | Assert a state the POM exposes; keep mechanics in the page object |
+| Assertions buried in page-object methods, or branching/loops in a step | `Then` step asserts with web-first `expect` on a locator the POM exposes; POMs stay assertion-free |
+| `@only` / bare `@skip` committed | `forbidOnly` in CI; `@fixme` + issue link in the scenario description |
+| Near-duplicate steps (`signs in`, `logs in`, `is logged in`) | One canonical phrasing; prune with `bddgen export --unused-steps` |
+| `Background` longer than ~4 lines or with UI setup | Keep it to business context; move setup into fixtures |
 | One step hard-coded to one email/user | Parameterize: `Given a "<tier>" member` + `Examples` |
 | `.feature` named after a page (`cart-page.feature`) | Name after the capability (`checkout.feature`, `refunds.feature`) |
 
@@ -91,10 +108,15 @@ method. If a non-engineer can't read the scenario, it's wrong.
   run; add it to `.gitignore`. Commit the `.feature` files instead — they *are*
   the living behavior docs the business reads and reviews in PRs.
 - **Tag-filter for speed.** Run the smoke subset in pre-deploy pipelines:
-  `bddgen --tags "@smoke" && playwright test`; run the full suite on PRs.
-- **Publish behavior docs.** Enable a Cucumber/HTML reporter via `defineBddConfig`
-  so each run emits a human-readable report of scenarios — this is the artifact
+  `bddgen --tags "@smoke and not @wip" && playwright test` (Cucumber tag
+  expressions); run the full suite on PRs. Scenario tags also become Playwright
+  tags, so `playwright test --grep @smoke` works on an already-generated suite.
+- **Publish behavior docs.** Add `cucumberReporter('html', { outputFile })` from
+  `playwright-bdd` to the Playwright `reporter` array (not to `defineBddConfig`)
+  so each run emits a human-readable scenario report — this is the artifact
   non-engineers actually consume. Upload it as a CI artifact on both pass and fail.
-- **Fail the build on undefined/ambiguous steps.** `bddgen` errors when a Gherkin
-  step has no matching definition — treat that as a hard failure, not a warning,
-  so drift between `.feature` files and steps can't merge.
+- **Fail the build on undefined steps.** Keep `missingSteps: 'fail-on-gen'` (the
+  default) so `bddgen` exits non-zero when a Gherkin step has no definition;
+  never switch to `'skip-scenario'` to get green. Ambiguous matches also fail.
+- **Version floor.** playwright-bdd v9 needs Node 20+ and `@playwright/test`
+  1.53+; it no longer needs `@cucumber/cucumber` installed.
