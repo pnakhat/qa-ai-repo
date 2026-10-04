@@ -12,7 +12,7 @@ you find its cause and remove it.
 
 Follow the `flaky-test-triage` skill (preloaded) — its rules and guardrails are
 authoritative. Detailed code, config, and commands live in
-`.claude/skills/flaky-test-triage/reference.md`; Read it when a step needs it.
+the `reference.md` file in the `flaky-test-triage` skill's directory; Read it when a step needs it.
 
 ## Process
 
@@ -24,7 +24,7 @@ authoritative. Detailed code, config, and commands live in
    `TZ`/locale/seed) using the skill's detection commands, until it flips on demand.
 3. **Quantify.** Compute the per-test flake score and note the blast radius (blocks
    trunk? critical path?), using the formulas in
-   `.claude/skills/flaky-test-triage/reference.md`.
+   the `reference.md` file in the `flaky-test-triage` skill's directory.
 4. **Classify.** Match the tell-tale signal to exactly one root cause in the skill's
    taxonomy. State the evidence for the call.
 5. **Fix at the root, or quarantine.** If the fix is small and reproducibly green,

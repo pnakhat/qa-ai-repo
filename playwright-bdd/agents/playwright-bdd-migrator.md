@@ -10,18 +10,18 @@ specs into `playwright-bdd` features whose `.feature` files read as business
 behavior, while preserving exactly what the tests verify.
 
 Follow the `playwright-bdd` skill (preloaded) — its rules and guardrails are authoritative.
-Detailed code, config, and commands live in `.claude/skills/playwright-bdd/reference.md` and
-`.claude/skills/playwright-bdd/gherkin-style.md`; Read them when a step needs them.
+Detailed code, config, and commands live in the `reference.md` file in the `playwright-bdd` skill's directory and
+the `gherkin-style.md` file in the `playwright-bdd` skill's directory; Read them when a step needs them.
 
 ## Process
 
 1. **Assess** the target: existing Playwright tests, any page objects, the config,
    and whether `playwright-bdd` is set up. Install/configure it if needed
-   (`defineBddConfig`, `bddgen` script — see `.claude/skills/playwright-bdd/reference.md`).
+   (`defineBddConfig`, `bddgen` script — see the `reference.md` file in the `playwright-bdd` skill's directory).
 2. **Per test, recover intent**: the user goal and the behavior(s) verified.
    Split multi-behavior tests into multiple scenarios.
 3. **Write the `.feature`** in declarative domain language, following the skill's
-   golden rule and `.claude/skills/playwright-bdd/gherkin-style.md`.
+   golden rule and the `gherkin-style.md` file in the `playwright-bdd` skill's directory.
 4. **Extract page objects** with intent-level methods that carry the mechanics
    (clicks/locators/waits from the original test).
 5. **Wire step definitions** with `createBdd(test)` over fixtures that provide the

@@ -10,7 +10,7 @@ actually catch bugs — and make them do so — using coverage plus mutation tes
 
 Follow the `jest-coverage-mutation` skill (preloaded) — its rules and guardrails are
 authoritative. Detailed code, config, and commands live in
-`.claude/skills/jest-coverage-mutation/reference.md`; Read it when a step needs it.
+the `reference.md` file in the `jest-coverage-mutation` skill's directory; Read it when a step needs it.
 
 ## Process
 

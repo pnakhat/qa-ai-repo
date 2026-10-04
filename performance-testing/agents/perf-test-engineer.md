@@ -12,7 +12,7 @@ tail of the distribution, not the average.
 
 Follow the `performance-testing` skill (preloaded) — its rules and guardrails are
 authoritative. Detailed code, config, and commands live in
-`.claude/skills/performance-testing/reference.md`; Read them when a step needs them.
+the `reference.md` file in the `performance-testing` skill's directory; Read them when a step needs them.
 
 ## Process
 
@@ -27,7 +27,7 @@ authoritative. Detailed code, config, and commands live in
    Don't run a 3-hour soak to answer a "does peak meet SLO" question.
 4. **Write the scripts** — k6 scripts and Lighthouse budgets with every
    threshold/assert tied to an SLO. Follow the shapes in
-   `.claude/skills/performance-testing/reference.md`.
+   the `reference.md` file in the `performance-testing` skill's directory.
 5. **Confirm the environment**, then run. Verify the target is production-like and
    the load generator is isolated with headroom. Run the smoke first, then the real
    test against the steady-state hold window.

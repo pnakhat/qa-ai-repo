@@ -72,6 +72,36 @@ test('cursor and windsurf agents inline the skill guardrails skills: would prelo
   assert.ok(!claudeAgent.includes(marker), 'claude keeps skills: preload and must not inline SKILL.md');
 });
 
+test('agent skill-file references resolve in every install route', () => {
+  // Agent sources say "the `x.md` file in the `<skill>` skill's directory" so the
+  // same text works from .claude/skills/ and from a plugin cache. Cursor,
+  // Windsurf, and AGENTS.md get a concrete path to the copied sibling instead.
+  const cwd = fresh();
+  for (const name of listObjectives().map((o) => o.name)) {
+    install(loadObjective(name), ['cursor', 'windsurf', 'agents'], { cwd, log() {} });
+  }
+  const rules = [
+    ...readdirSync(join(cwd, '.cursor', 'rules')).filter((f) => f.endsWith('.mdc')).map((f) => join(cwd, '.cursor', 'rules', f)),
+    ...readdirSync(join(cwd, '.windsurf', 'rules')).filter((f) => f.endsWith('.md')).map((f) => join(cwd, '.windsurf', 'rules', f)),
+  ];
+  for (const f of rules) {
+    const text = readFileSync(f, 'utf8');
+    assert.ok(!text.includes("skill's directory"), `${f} kept the plugin-only phrasing`);
+    assert.ok(!text.includes('.claude/skills/'), `${f} points at a Claude-only path`);
+    assert.deepEqual(deadLinks(f, dirname(f)), [], `dead link in ${f}`);
+  }
+  const cursorAgent = readFileSync(join(cwd, '.cursor', 'rules', 'qa-e2e-author.mdc'), 'utf8');
+  assert.match(cursorAgent, /`playwright-e2e\/reference\.md`/);
+  const agentsMd = readFileSync(join(cwd, 'AGENTS.md'), 'utf8');
+  assert.match(agentsMd, /`\.qa-ai\/playwright-e2e\/reference\.md`/);
+  assert.deepEqual(deadLinks(join(cwd, 'AGENTS.md'), cwd), []);
+
+  // Claude Code installs keep the location-neutral wording verbatim.
+  install(loadObjective('playwright-e2e'), ['claude'], { cwd, log() {} });
+  const claudeAgent = readFileSync(join(cwd, '.claude', 'agents', 'qa-e2e-author.md'), 'utf8');
+  assert.match(claudeAgent, /the `reference\.md` file in the `playwright-e2e` skill's directory/);
+});
+
 test('an agent that is told to use an MCP server does not restrict its tools', () => {
   // An explicit `tools:` allowlist in agent frontmatter excludes mcp__* tools,
   // which silently disables the MCP server the same objective installs.

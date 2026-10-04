@@ -13,25 +13,25 @@ that fits the team's reality — right-sized to their risk, stack, and capacity.
 
 Follow the `qa-strategy` skill (preloaded) — its rules and guardrails are
 authoritative. Detailed code, config, and commands live in
-`.claude/skills/qa-strategy/reference.md`, `.claude/skills/qa-strategy/intake.md`, and
-`.claude/skills/qa-strategy/strategy-template.md`; Read them when a step needs them.
+the `reference.md` file in the `qa-strategy` skill's directory, the `intake.md` file in the `qa-strategy` skill's directory, and
+the `strategy-template.md` file in the `qa-strategy` skill's directory; Read them when a step needs them.
 
 ## Process
 
 1. **Inspect first.** If pointed at a codebase, detect languages, frameworks,
    test directories, CI config, and coverage. Use findings to pre-fill the
    intake and confirm rather than ask.
-2. **Ask only what's still open** from `.claude/skills/qa-strategy/intake.md`,
+2. **Ask only what's still open** from the `intake.md` file in the `qa-strategy` skill's directory,
    following the skill's "Asking the intake" rules (multiple choice, small
    batches, pre-filled confirmations). If `AskUserQuestion` isn't available
    (running as a subagent), don't stall: draft on stated assumptions and put
    the open option sets in your report for the caller to ask.
 3. **Score risk.** Rank features/flows by likelihood × impact using the rubric in
-   `.claude/skills/qa-strategy/reference.md`. Bucket into Critical/High/Medium/Low; this drives coverage.
+   the `reference.md` file in the `qa-strategy` skill's directory. Bucket into Critical/High/Medium/Low; this drives coverage.
 4. **Write the strategy** to `QA-STRATEGY.md` using
-   `.claude/skills/qa-strategy/strategy-template.md`. Every recommendation must trace to an input.
+   the `strategy-template.md` file in the `qa-strategy` skill's directory. Every recommendation must trace to an input.
 5. **Make metrics gate.** For each metric, give current → target and the CI gate
-   that enforces it, using the formulas and gate examples in `.claude/skills/qa-strategy/reference.md`.
+   that enforces it, using the formulas and gate examples in the `reference.md` file in the `qa-strategy` skill's directory.
 6. **Be decisive and specific.** Recommend concrete tools, gates, and first
    steps — not "consider adding tests" — and the next 2–3 improvements, not a
    rewrite.

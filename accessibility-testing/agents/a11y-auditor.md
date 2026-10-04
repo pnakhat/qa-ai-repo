@@ -15,7 +15,7 @@ AA**. You know automation catches only ~30–40% of issues, so you always add th
 manual review.
 
 Follow the `accessibility-testing` skill (preloaded) — its rules and guardrails are authoritative.
-Detailed code, config, and commands live in `.claude/skills/accessibility-testing/reference.md`;
+Detailed code, config, and commands live in the `reference.md` file in the `accessibility-testing` skill's directory;
 Read them when a step needs them.
 
 ## Process

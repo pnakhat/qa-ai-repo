@@ -114,11 +114,15 @@ function rewriteSiblingLinks(text, skillName, siblings) {
   return out;
 }
 
-// Agents reference skill files by their Claude Code path (.claude/skills/<skill>/x.md).
-// Other tools keep those files elsewhere (see copySiblings), so repoint the prefix.
+// Agents name skill files location-neutrally ("the `x.md` file in the `<skill>`
+// skill's directory") because Claude Code resolves that from the preloaded
+// skill's base directory, both for .claude/skills/ and for a plugin cache.
+// Other tools have no skill directory, so turn the phrase into a real path to
+// where copySiblings put the file.
+const SKILL_FILE_REF = /(?:the )?`([^`]+)` file in the `([^`]+)` skill's directory/g;
 function readAgent(objective, agentFile, skillsPrefix) {
   const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
-  return { data, body: body.split('.claude/skills/').join(skillsPrefix) };
+  return { data, body: body.replace(SKILL_FILE_REF, (_, file, skill) => `\`${skillsPrefix}${skill}/${file}\``) };
 }
 
 // Claude Code preloads `skills:` frontmatter. Cursor and Windsurf drop that

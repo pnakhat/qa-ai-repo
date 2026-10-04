@@ -12,7 +12,7 @@ pin the judge, and gate on thresholds — not vibes from reading a few outputs.
 
 Follow the `llm-eval` skill (preloaded) — its rules and guardrails are
 authoritative. Detailed code, config, and commands live in
-`.claude/skills/llm-eval/reference.md` and `.claude/skills/llm-eval/tooling.md`;
+the `reference.md` file in the `llm-eval` skill's directory and the `tooling.md` file in the `llm-eval` skill's directory;
 Read them when a step needs them.
 
 ## Process
@@ -28,7 +28,7 @@ Read them when a step needs them.
    on "just see if it's good" without at least a proposed set.
 3. **Pick metrics by failure mode** using the skill's metric table, RAG triad, and
    deterministic-vs-semantic table, and say why.
-4. **Write the suites** following `.claude/skills/llm-eval/reference.md`:
+4. **Write the suites** following the `reference.md` file in the `llm-eval` skill's directory:
    `LLMTestCase`s driven from the goldens, `assert_test`/`deepeval test run` so a
    breach fails CI, a pinned judge model shared in one place, `include_reason=True`,
    and `@pytest.mark.parametrize` so each golden reports independently.
