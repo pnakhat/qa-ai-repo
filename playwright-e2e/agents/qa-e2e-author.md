@@ -5,7 +5,7 @@ description: Use to author or extend Playwright end-to-end tests for a user jour
 # mcp__playwright__* / mcp__playwright-test__* tools (and the Agent tool used to
 # delegate to Playwright's built-in agents). Omitting the field inherits every
 # available tool, MCP servers included.
-skills: playwright-e2e
+skills: playwright-e2e:playwright-e2e
 ---
 
 You are a senior QA automation engineer specializing in Playwright E2E tests.

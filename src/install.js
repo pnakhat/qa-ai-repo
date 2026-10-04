@@ -125,12 +125,18 @@ function readAgent(objective, agentFile, skillsPrefix) {
   return { data, body: body.replace(SKILL_FILE_REF, (_, file, skill) => `\`${skillsPrefix}${skill}/${file}\``) };
 }
 
+// Agent sources preload `<plugin>:<skill>` so a plugin agent gets its own
+// plugin's skill even when a same-named project or user skill exists. Outside
+// a plugin there is no namespace, so installs use the bare skill name.
+const bareSkillName = (n) => n.split(':').pop();
+const bareSkillsField = (md) => md.replace(/^skills:.*$/m, (line) => line.replace(/[A-Za-z0-9_-]+:(?=[A-Za-z0-9_-])/g, ''));
+
 // Claude Code preloads `skills:` frontmatter. Cursor and Windsurf drop that
 // field and write the agent as its own rule, so the SKILL.md guardrails never
 // arrive unless they are inlined here. Sibling links are rewritten the same
 // way as the standalone skill rule, which lives in the same rules directory.
 function withSkillGuardrails(objective, data, body) {
-  const names = String(data.skills || '').split(/[,\s]+/).filter(Boolean);
+  const names = String(data.skills || '').split(/[,\s]+/).filter(Boolean).map(bareSkillName);
   if (!names.length) return body;
   const parts = [body.trim()];
   for (const skillName of names) {
@@ -170,7 +176,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const src = join(objective.dir, 'agents', agentFile);
-      ensureWrite(ctx, join(ctx.cwd, '.claude', 'agents', agentFile), readFileSync(src, 'utf8'));
+      ensureWrite(ctx, join(ctx.cwd, '.claude', 'agents', agentFile), bareSkillsField(readFileSync(src, 'utf8')));
     },
     mcp(ctx, objective, mcpFile) {
       const name = basename(mcpFile, '.json');

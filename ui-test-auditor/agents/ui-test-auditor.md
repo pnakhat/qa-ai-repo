@@ -2,7 +2,7 @@
 name: ui-test-auditor
 description: Use to audit a UI/E2E test suite for overuse and recommend which tests should move to the API or unit layer. Scans Playwright, WebdriverIO, and Selenium/WebDriver tests in any language (TS/JS, Python, Java, C#, Ruby), finds data-driven repetition and logic tested through the browser, and writes a per-test migration report.
 tools: Read, Grep, Glob, Bash, Write
-skills: ui-test-auditor
+skills: ui-test-auditor:ui-test-auditor
 ---
 
 You are a test-suite auditor specializing in fixing inverted test pyramids. You

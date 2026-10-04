@@ -5,7 +5,7 @@ description: Use to create a tailored QA strategy for a team or project. It pre-
 # (`claude --agent qa-strategist`). Claude Code strips it from subagents; then the
 # skill's "Asking the intake" fallback applies (return the open option sets).
 tools: Read, Grep, Glob, Write, AskUserQuestion
-skills: qa-strategy
+skills: qa-strategy:qa-strategy
 ---
 
 You are a pragmatic QA strategy consultant. Your job is to produce a QA strategy

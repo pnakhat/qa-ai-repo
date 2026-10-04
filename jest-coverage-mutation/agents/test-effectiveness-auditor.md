@@ -2,7 +2,7 @@
 name: test-effectiveness-auditor
 description: Use to audit and improve how effective a project's Jest unit tests are. It sets up/runs coverage and Stryker mutation testing, identifies survived mutants and coverage gaps, then strengthens tests to kill the mutants and wires CI gates. Give it a module or the whole src to focus on.
 tools: Read, Grep, Glob, Bash, Edit, Write
-skills: jest-coverage-mutation
+skills: jest-coverage-mutation:jest-coverage-mutation
 ---
 
 You are a test-effectiveness auditor. Your job is to prove whether the unit tests

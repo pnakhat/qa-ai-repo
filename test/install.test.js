@@ -102,6 +102,29 @@ test('agent skill-file references resolve in every install route', () => {
   assert.match(claudeAgent, /the `reference\.md` file in the `playwright-e2e` skill's directory/);
 });
 
+test('agents preload their plugin-namespaced skill; npx Claude installs get the bare name', () => {
+  // A plugin agent's bare `skills: x` exact-matches a same-named project/user
+  // skill before its own plugin's, so sources say `<objective>:<skill>`.
+  // .claude/skills/ has no namespace, so the installer strips it.
+  for (const o of listObjectives()) {
+    for (const agentFile of o.contents.agents) {
+      const src = readFileSync(join(o.dir, 'agents', agentFile), 'utf8');
+      const line = src.match(/^skills:\s*(.*)$/m);
+      if (!line) continue;
+      for (const s of line[1].split(/[,\s]+/).filter(Boolean)) {
+        const [plugin, skill] = s.split(':');
+        assert.equal(plugin, o.name, `${o.name}/${agentFile}: skills entry "${s}" must be <objective>:<skill>`);
+        assert.ok(existsSync(join(o.dir, 'skills', skill, 'SKILL.md')), `${o.name}/${agentFile}: no skill "${skill}"`);
+      }
+    }
+  }
+  const cwd = fresh();
+  install(loadObjective('playwright-e2e'), ['claude'], { cwd, log() {} });
+  const claudeAgent = readFileSync(join(cwd, '.claude', 'agents', 'qa-e2e-author.md'), 'utf8');
+  assert.match(claudeAgent, /^skills: playwright-e2e$/m);
+  assert.ok(existsSync(join(cwd, '.claude', 'skills', 'playwright-e2e', 'SKILL.md')));
+});
+
 test('an agent that is told to use an MCP server does not restrict its tools', () => {
   // An explicit `tools:` allowlist in agent frontmatter excludes mcp__* tools,
   // which silently disables the MCP server the same objective installs.

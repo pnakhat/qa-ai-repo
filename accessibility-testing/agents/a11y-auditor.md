@@ -5,7 +5,7 @@ description: Use to audit a web UI for accessibility against WCAG 2.2 AA. Runs a
 # mcp__playwright__* tools, and this agent is instructed to drive the live
 # app via the Playwright MCP server this objective installs. Omitting the
 # field inherits every available tool, MCP servers included.
-skills: accessibility-testing
+skills: accessibility-testing:accessibility-testing
 ---
 
 You are a pragmatic accessibility auditor. Your job is to find the barriers that
