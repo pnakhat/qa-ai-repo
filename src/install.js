@@ -119,10 +119,16 @@ function rewriteSiblingLinks(text, skillName, siblings) {
 // skill's base directory, both for .claude/skills/ and for a plugin cache.
 // Other tools have no skill directory, so turn the phrase into a real path to
 // where copySiblings put the file.
+// "(preloaded)" is also Claude-only: say where the skill text actually is.
 const SKILL_FILE_REF = /(?:the )?`([^`]+)` file in the `([^`]+)` skill's directory/g;
-function readAgent(objective, agentFile, skillsPrefix) {
+function readAgent(objective, agentFile, skillsPrefix, skillWhere) {
   const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
-  return { data, body: body.replace(SKILL_FILE_REF, (_, file, skill) => `\`${skillsPrefix}${skill}/${file}\``) };
+  return {
+    data,
+    body: body
+      .replace(SKILL_FILE_REF, (_, file, skill) => `\`${skillsPrefix}${skill}/${file}\``)
+      .replace(/ skill \(preloaded\)/g, ` skill (${skillWhere})`),
+  };
 }
 
 // Agent sources preload `<plugin>:<skill>` so a plugin agent gets its own
@@ -197,7 +203,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = readAgent(objective, agentFile, '');
+      const { data, body } = readAgent(objective, agentFile, '', 'included below');
       ensureWrite(ctx, join(ctx.cwd, '.cursor', 'rules', `${name}.mdc`),
         toMdc(data, withSkillGuardrails(objective, data, body)));
     },
@@ -221,7 +227,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = readAgent(objective, agentFile, '');
+      const { data, body } = readAgent(objective, agentFile, '', 'included below');
       const full = withSkillGuardrails(objective, data, body);
       const md = `# ${data.name || name}\n\n${data.description || ''}\n\n${full.trim()}\n`;
       ensureWrite(ctx, join(ctx.cwd, '.windsurf', 'rules', `${name}.md`), md);
@@ -248,7 +254,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = readAgent(objective, agentFile, '.qa-ai/');
+      const { data, body } = readAgent(objective, agentFile, '.qa-ai/', 'its own section in this file');
       appendAgentsMd(ctx, data.name || name, data.description, body);
     },
     mcp(ctx, objective, mcpFile) {

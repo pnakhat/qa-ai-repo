@@ -39,7 +39,7 @@ Milliseconds to run, one assertion per rule; there is no cheaper place to prove 
 
 ## FE component — rendered UI with network mocked (Testing Library + MSW)
 
-```ts
+```tsx
 // web/src/features/checkout/Checkout.test.tsx  (Vitest + Testing Library + MSW)
 // toBeInTheDocument comes from '@testing-library/jest-dom/vitest' in the Vitest setup file.
 import { beforeAll, afterEach, afterAll, it, expect } from 'vitest';

@@ -183,7 +183,7 @@ export const options = {
 };
 
 export function setup() {
-  const host = new URL(BASE_URL).hostname;
+  const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];   // k6 has no global URL
   if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to provision data on ${host}`);
 
   // One account per possible VU, so no two VUs mutate the same cart.
@@ -240,7 +240,7 @@ so you learn the capacity ceiling and *how* it fails (graceful slope vs cliff).
 
 ```js
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'https://staging.example.com';
 
@@ -250,6 +250,8 @@ export const options = {
       executor: 'ramping-arrival-rate',
       startRate: 50,
       timeUnit: '1s',
+      // No think time below, so an iteration lasts one request. VUs needed =
+      // rate × response time: 1500 it/s × up to ~1 s near the knee ≈ 1500, + headroom.
       preAllocatedVUs: 500,
       maxVUs: 2000,
       stages: [
@@ -276,7 +278,9 @@ export const options = {
 export default function () {
   const res = http.get(`${BASE_URL}/api/products`);
   check(res, { 'status 2xx/3xx': (r) => r.status < 400 });
-  sleep(Math.random() * 2 + 1);
+  // No sleep(): under an arrival-rate executor the rate sets the load. Think time
+  // only lengthens each iteration, so k6 needs more VUs than maxVUs allows and
+  // drops iterations — the dropped_iterations gate would then fail on k6, not the server.
 }
 ```
 
@@ -293,7 +297,7 @@ upward drift over time means a leak (memory, connections, file descriptors, cach
 
 ```js
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check } from 'k6';
 import { Trend } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'https://staging.example.com';
@@ -306,6 +310,9 @@ export const options = {
       rate: 100,               // steady, moderate — well below the knee
       timeUnit: '1s',
       duration: '3h',          // long enough for a slow leak to surface
+      // VUs needed = rate × iteration time (one request, no sleep): 100 × 0.4 s = 40.
+      // 200 pre-allocated / 400 max leaves room for a leak to slow responses 10×
+      // before k6 runs out of VUs.
       preAllocatedVUs: 200,
       maxVUs: 400,
     },
@@ -314,6 +321,8 @@ export const options = {
     http_req_failed: ['rate<0.001'],
     // Latency must not DRIFT: compare early vs late windows in analysis.
     http_req_duration: ['p(95)<400'],
+    // A soak that silently sends less than the modelled load proves nothing.
+    dropped_iterations: ['count<1'],
   },
 };
 
@@ -321,7 +330,7 @@ export default function () {
   const res = http.get(`${BASE_URL}/api/products`);
   latency.add(res.timings.duration);
   check(res, { 'ok': (r) => r.status === 200 });
-  sleep(Math.random() * 4 + 2);
+  // No sleep(): the arrival rate sets the load (see the stress variant).
 }
 ```
 

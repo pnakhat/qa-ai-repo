@@ -5,7 +5,7 @@ only the ones whose answer would change the strategy — the **Drives** line say
 which decision each one feeds; if that decision is already settled (by the
 repo, the prompt, or an earlier answer), skip the question. **Bold** questions
 are the minimum for a useful first draft. Interaction rules (batching,
-pre-filling, tools, recording answers) are in `SKILL.md` → "Asking the intake".
+pre-filling, tools, recording answers) are in the `qa-strategy` skill's "Asking the intake" section.
 
 Format when asking: question, then options as `label — tradeoff/implication`.
 Always allow "Other (free text)".

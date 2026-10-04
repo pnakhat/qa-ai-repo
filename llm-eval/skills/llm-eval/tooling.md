@@ -3,9 +3,10 @@
 ## Versions
 
 - **deepeval ≥ 4.2.3, < 5** — metrics API, `assert_test`, `evaluate`,
-  `deepeval test run`. Verify with `pip show deepeval`. 4.2.3 flipped
-  Hallucination/Bias/Toxicity to higher-is-better (`score >= threshold`); any
-  suite written for 3.x – 4.2.2 must re-baseline those thresholds.
+  `deepeval test run`. Verify with `pip show deepeval`. The snippets were
+  checked on 4.2.3, hence the floor. 4.2.0 flipped Hallucination/Bias/Toxicity
+  to higher-is-better (`score >= threshold`); any suite written for 3.x – 4.1.x
+  must re-baseline those thresholds.
 - **pytest 8+** — `deepeval test run` wraps pytest; plain `pytest` works too because
   `assert_test` raises.
 - **Python 3.9+** (3.11+ recommended).

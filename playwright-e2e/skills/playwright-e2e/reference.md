@@ -323,7 +323,8 @@ first candidate, then tighten it by hand.
 ## Lint — catch missing `await`
 
 ```js
-// eslint.config.js (typescript-eslint flat config; type-aware rules need parserOptions.projectService)
+// eslint.config.js excerpt: the `rules` of your typescript-eslint flat-config entry
+// (type-aware rules need parserOptions.projectService)
 rules: {
   '@typescript-eslint/no-floating-promises': 'error',
   'playwright/no-wait-for-timeout': 'error',   // if eslint-plugin-playwright is installed
@@ -374,7 +375,9 @@ npx playwright merge-reports --reporter=html ./all-blob-reports  # combine shard
 ## Live-browser exploration with the Playwright MCP server
 
 Installing this objective wires the `@playwright/mcp` server into `.mcp.json`
-(Claude Code) or `.cursor/mcp.json` (Cursor). Use it to:
+(Claude Code) or `.cursor/mcp.json` (Cursor), pinned to a stable release
+(`@playwright/mcp@0.0.83`, not `@latest`) so tool names don't change under the
+agents; bump the pin deliberately. Use it to:
 
 - Navigate the live app and discover stable locators before writing specs.
 - Verify that a user journey completes end-to-end interactively.
@@ -393,9 +396,15 @@ the `playwright-test` MCP server (`npx playwright run-test-mcp-server`, also
 installed by this objective).
 
 ```bash
-npx playwright init-agents --loop=claude   # writes .claude/agents/playwright-test-*.md + .mcp.json entry
+cp .mcp.json .mcp.json.bak                 # init-agents overwrites .mcp.json
+npx playwright init-agents --loop=claude   # writes .claude/agents/playwright-test-*.md + .mcp.json
+npx qa-ai-repo add playwright-e2e          # idempotent: restores the "playwright" server it dropped
 npx playwright init-agents --loop=vscode   # or codex / opencode; re-run after upgrading Playwright
 ```
+
+`init-agents` replaces the loop's MCP config with only `playwright-test`. Merge
+back anything else it dropped from the backup. Plugin installs get their servers
+from the plugin, so they are unaffected.
 
 - **Seed** (`tests/seed.spec.ts`): the test every generated test starts from. Import
   the project's fixtures in it so auth state and page objects carry through.

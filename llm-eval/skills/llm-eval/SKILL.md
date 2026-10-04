@@ -1,6 +1,6 @@
 ---
 name: llm-eval
-description: Author LLM/RAG/agent evaluation suites in DeepEval that prove a feature is correct with gated numbers, not vibes. Use when asked to "eval an LLM", "test a prompt", "measure RAG quality", "check for hallucination", "score answer relevancy", "verify tool calls", or gate a release on model output quality. Ships the metric definitions baked in — faithfulness, answer relevancy, contextual precision/recall/relevancy, hallucination, tool correctness, G-Eval, bias, toxicity — with the inputs each needs, the score formula, and the pass direction (which flipped for hallucination/bias/toxicity in deepeval 4.2.3). Enforces guardrails against unpinned judge models, exact-matching non-deterministic output, contaminated goldens, single-run scores, and metric-picking that ignores the real failure mode. See `reference.md` for runnable DeepEval suites and CI wiring, `tooling.md` for install/versions and alternatives.
+description: Author LLM/RAG/agent evaluation suites in DeepEval that prove a feature is correct with gated numbers, not vibes. Use when asked to "eval an LLM", "test a prompt", "measure RAG quality", "check for hallucination", "score answer relevancy", "verify tool calls", or gate a release on model output quality. Ships the metric definitions baked in — faithfulness, answer relevancy, contextual precision/recall/relevancy, hallucination, tool correctness, G-Eval, bias, toxicity — with the inputs each needs, the score formula, and the pass direction (which flipped for hallucination/bias/toxicity in deepeval 4.2.0). Enforces guardrails against unpinned judge models, exact-matching non-deterministic output, contaminated goldens, single-run scores, and metric-picking that ignores the real failure mode. See `reference.md` for runnable DeepEval suites and CI wiring, `tooling.md` for install/versions and alternatives.
 ---
 
 # LLM Evaluation with DeepEval
@@ -28,10 +28,10 @@ here follows from them:
 
 Pick by the failure mode you're guarding against, not by what's easy to compute.
 Every DeepEval metric takes an `LLMTestCase`; the **Inputs** column is which fields
-that metric actually reads. **Direction** is the trap. In **deepeval ≥ 4.2.3
+that metric actually reads. **Direction** is the trap. In **deepeval ≥ 4.2.0
 every metric is higher-is-better and passes when `score >= threshold`** —
 Hallucination, Bias and Toxicity now score the *clean* share (not contradicted /
-unbiased / non-toxic). In 3.x – 4.2.2 those three scored the *flagged* share and
+unbiased / non-toxic). In 3.x – 4.1.x those three scored the *flagged* share and
 passed when `score <= threshold`. The same `threshold=0.2` therefore means "at
 most 20% flagged" on old versions and "at least 20% clean" (nearly no gate) on
 new ones. Pin the deepeval version, and never compare those three metrics'
@@ -44,13 +44,13 @@ scores across the change.
 | **ContextualPrecision** | Are the *relevant* retrieved chunks ranked above noise? (retriever) | `input`, `actual_output`, `expected_output`, `retrieval_context` | ranking-weighted relevance of retrieved nodes | `>= threshold` |
 | **ContextualRecall** | Did retrieval fetch everything the answer needs? (retriever) | `input`, `expected_output`, `retrieval_context` | claims in expected_output attributable to retrieval ÷ total | `>= threshold` |
 | **ContextualRelevancy** | How much of what was retrieved is on-topic? (retriever noise) | `input`, `retrieval_context` | relevant statements in retrieval ÷ total retrieved | `>= threshold` |
-| **Hallucination** | Does the output contradict known ground truth? | `input`, `actual_output`, `context` | contexts the output agrees with ÷ total contexts (≥ 4.2.3) | `>= threshold` (≤ 4.2.2: contradicted share, `<=`) |
+| **Hallucination** | Does the output contradict known ground truth? | `input`, `actual_output`, `context` | contexts the output agrees with ÷ total contexts (≥ 4.2.0) | `>= threshold` (≤ 4.1.x: contradicted share, `<=`) |
 | **ToolCorrectness** | Did the agent call the right tools? (**deterministic** scoring; an LLM judges tool *selection* only if you pass `available_tools`) | `input`, `tools_called`, `expected_tools` | correctly-called tools ÷ expected (name ± args/output/order) | `>= threshold` |
 | **TaskCompletion** | Did the agent accomplish the user's goal? | `input`, `actual_output` (+ `tools_called`, or a trace) | judge's assessment the task's outcome was achieved | `>= threshold` |
 | **GEval** (custom) | Any criterion you write in plain English | you declare `evaluation_params` | chain-of-thought judge score 0–1 on your rubric | `>= threshold` |
 | **Summarization** | Is the summary both accurate and complete? | `input` (source), `actual_output` | min(alignment, coverage) | `>= threshold` |
-| **Bias** | Gender/race/political/etc. bias in the output | `input`, `actual_output` | share of unbiased opinions (≥ 4.2.3) | `>= threshold` (≤ 4.2.2: biased share, `<=`) |
-| **Toxicity** | Toxic / harmful language in the output | `input`, `actual_output` | share of non-toxic opinions (≥ 4.2.3) | `>= threshold` (≤ 4.2.2: toxic share, `<=`) |
+| **Bias** | Gender/race/political/etc. bias in the output | `input`, `actual_output` | share of unbiased opinions (≥ 4.2.0) | `>= threshold` (≤ 4.1.x: biased share, `<=`) |
+| **Toxicity** | Toxic / harmful language in the output | `input`, `actual_output` | share of non-toxic opinions (≥ 4.2.0) | `>= threshold` (≤ 4.1.x: toxic share, `<=`) |
 
 All metrics default to `threshold=0.5` — never rely on the default; set it from a
 measured baseline. DeepEval 4.x renamed `LLMTestCaseParams` to `SingleTurnParams`
@@ -203,7 +203,7 @@ def test_rag_answer():
 - **State the direction and the deepeval version.** Pin `deepeval` in the lock
   file, comment each threshold with what it means ("≥ 0.9 of contexts not
   contradicted"), and re-baseline Hallucination/Bias/Toxicity thresholds when
-  crossing 4.2.3 — an old `threshold=0.2` becomes a near-useless gate.
+  crossing 4.2.0 — an old `threshold=0.2` becomes a near-useless gate.
 - **The system under test is non-deterministic too.** Run each golden more than
   once (`deepeval test run -r 3`) and gate on the pass rate across repeats; a
   case that passes 1 of 3 is a finding, not a pass.
@@ -237,7 +237,7 @@ findings to the OWASP Top 10 for LLM Applications.
 | Judge model unpinned ("gpt-4o", latest) | Pin a dated snapshot at `temperature=0`; record it in run provenance |
 | Eval set == few-shot examples in the prompt | Hold goldens out of the prompt/training data — contamination inflates scores |
 | One run, one number, called a result | Run the full set; report pass rate + variance; repeat before claiming a regression |
-| Hallucination/Bias/Toxicity threshold copied across a deepeval upgrade | Direction flipped in 4.2.3 (now clean share, `>=`); pin the version and re-baseline |
+| Hallucination/Bias/Toxicity threshold copied across a deepeval upgrade | Direction flipped in 4.2.0 (now clean share, `>=`); pin the version and re-baseline |
 | `AnswerRelevancy` used to catch a hallucination | Relevancy ≠ factuality; use Faithfulness (vs retrieval) or Hallucination (vs ground truth) |
 | RAG answer wrong, only generator metrics run | Add ContextualRecall/Precision — the fault may be retrieval, not generation |
 | One averaged "quality score" across metrics | Report each metric; an average hides the failing dimension |

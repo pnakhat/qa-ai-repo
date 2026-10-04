@@ -218,7 +218,7 @@ await expect(page).toHaveScreenshot('account.png', {
 
 Prefer the smallest meaningful region. With Playwright component testing:
 
-```ts
+```tsx
 // Button.spec.tsx — @playwright/experimental-ct-react
 import { test, expect } from '@playwright/experimental-ct-react';
 import { Button } from '../src/Button';

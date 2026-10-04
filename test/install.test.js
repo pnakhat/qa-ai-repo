@@ -156,3 +156,37 @@ test('the playwright setup project is discoverable from the documented layout', 
   assert.ok(setupLine, 'reference.md documents a setup project');
   assert.match(setupLine, /testDir:/, 'setup project must override testDir');
 });
+
+test('non-Claude installs carry no Claude-only wording and no dead sibling links', () => {
+  // Cursor, Windsurf and AGENTS.md have no skills: preload and no SKILL.md file:
+  // the skill is inlined (rules) or a section of AGENTS.md. Sibling files copied
+  // next to the rules must only point at files that were copied with them.
+  const cwd = fresh();
+  for (const name of listObjectives().map((o) => o.name)) {
+    install(loadObjective(name), ['cursor', 'windsurf', 'agents'], { cwd, log() {} });
+  }
+  const walk = (d) => readdirSync(d, { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+  const files = [
+    ...walk(join(cwd, '.cursor', 'rules')),
+    ...walk(join(cwd, '.windsurf', 'rules')),
+    ...walk(join(cwd, '.qa-ai')),
+    join(cwd, 'AGENTS.md'),
+  ].filter((f) => /\.mdc?$/.test(f));
+
+  for (const f of files) {
+    const text = readFileSync(f, 'utf8');
+    assert.ok(!text.includes('(preloaded)'), `${f} says the skill is preloaded`);
+    assert.ok(!text.includes('SKILL.md'), `${f} points at SKILL.md, which is not installed here`);
+    // Bare `x.md` in a sibling file resolves next to it. ALL-CAPS names are
+    // reports the agents write (UI-TEST-AUDIT.md), not shipped files.
+    if (dirname(f) === join(cwd, '.cursor', 'rules') || dirname(f) === join(cwd, '.windsurf', 'rules') || f.endsWith('AGENTS.md')) continue;
+    const bare = [...text.matchAll(/`([A-Za-z0-9_.-]+\.md)`/g)].map((m) => m[1])
+      .filter((r) => !/^[A-Z0-9-]+\.md$/.test(r) && !existsSync(join(dirname(f), r)));
+    assert.deepEqual(bare, [], `dead sibling link in ${f}`);
+  }
+  const cursorAgent = readFileSync(join(cwd, '.cursor', 'rules', 'qa-e2e-author.mdc'), 'utf8');
+  assert.match(cursorAgent, /`playwright-e2e` skill \(included below\)/);
+  const agentsMd = readFileSync(join(cwd, 'AGENTS.md'), 'utf8');
+  assert.match(agentsMd, /`playwright-e2e` skill \(its own section in this file\)/);
+});

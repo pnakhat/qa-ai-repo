@@ -56,6 +56,7 @@ setup project writes `storageState`, and the BDD project depends on it — same
 pattern as the `playwright-e2e` skill:
 
 ```ts
+// playwright.config.ts excerpt: goes inside defineConfig({ ... }) above
 projects: [
   { name: 'setup', testDir: './auth', testMatch: /.*\.setup\.ts/ },
   { name: 'bdd', testDir, dependencies: ['setup'],

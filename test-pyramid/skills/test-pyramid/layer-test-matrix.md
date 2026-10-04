@@ -46,7 +46,7 @@ the API and test those rules in the BE.
 
 - Pyramid default (backend/logic-heavy): ≈ 80% small · 15% medium · 5% large
   (Google), or 70/20/10. Trophy (FE-heavy) and honeycomb (microservices) shift
-  the bulk to component/integration — choose per SKILL.md step 4 and state why.
+  the bulk to component/integration — choose per step 4 of the `test-pyramid` skill's Method and state why.
 - In every shape, contracts do the heavy lifting at seams so E2E stays tiny.
 - Inverted suite (mostly slow E2E)? Push each E2E down: replace with a component
   test (FE), an integration test (BE), or a contract test (seam) wherever possible.

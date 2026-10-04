@@ -37,8 +37,10 @@ the second is an interrogation. Ask the *fewest* questions that pick the strateg
 - **Skip what can't change the outcome.** Each question in `intake.md` names the
   decision it drives; if that decision is settled, don't ask.
 - **Multiple choice, not open-ended.** 2–4 concrete options per question, each
-  with its tradeoff in a few words, plus "Other" for free text. Mark the option
-  you'd recommend from the evidence as the first one.
+  with its tradeoff in a few words. Mark the option you'd recommend from the
+  evidence as the first one. **"Other (free text)" is mandatory on every
+  question**: `AskUserQuestion` adds it for you; in a printed list or an option
+  set returned to the caller, write it out as the last option, every time.
 - **Small batches by section** — at most 4 questions per batch, bold
   (minimum-draft) questions first. Terse answers are fine; proceed on them.
 - **Tooling.** In Claude Code's main conversation use the `AskUserQuestion`
@@ -46,7 +48,8 @@ the second is an interrogation. Ask the *fewest* questions that pick the strateg
   Elsewhere, print a numbered list (`1a`, `1b`, …) and let the user reply with codes.
   Subagents cannot ask the user (Claude Code removes `AskUserQuestion` from
   them): they pre-fill what they can, write the draft on stated assumptions, and
-  return the still-open option sets to the caller to ask.
+  return the still-open option sets to the caller to ask, each ending in
+  "Other (free text)".
 - **Never invent answers.** Unknown → `TBD` + the assumption you proceeded on.
 - **Record every decision** in the strategy's *Intake decisions* table
   (`strategy-template.md`): question → chosen option → source (user / repo /

@@ -113,7 +113,7 @@ test('filled cart has no serious a11y violations', async ({ page, cart, checkA11
 Assert at the component level, where the markup actually lives — cheapest and
 fastest place to catch a11y bugs.
 
-```ts
+```tsx
 import { render } from '@testing-library/react';
 import { axe, toHaveNoViolations } from 'jest-axe';
 import { TextField } from './TextField';

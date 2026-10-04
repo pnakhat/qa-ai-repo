@@ -165,7 +165,10 @@ in one project instead of installed as a plugin.
 5. **Objective-specific extras:** playwright-e2e needs `npx playwright install`
    for browsers. For Playwright's built-in planner, generator, and healer agents,
    also run `npx playwright init-agents --loop=claude`, and re-run it after
-   upgrading Playwright.
+   upgrading Playwright. `init-agents` overwrites `.mcp.json` with only
+   `playwright-test`, so re-run `npx qa-ai-repo add playwright-e2e` afterwards
+   (idempotent) to restore the `playwright` server, or back the file up and merge
+   it back. Plugin installs are unaffected: their servers come from the plugin.
 6. **Update or uninstall:** re-run `add` to update. To uninstall, delete the files
    listed in step 1 and remove the objective's entries from `mcpServers` in
    `.mcp.json`.

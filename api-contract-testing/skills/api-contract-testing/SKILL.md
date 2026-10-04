@@ -29,6 +29,9 @@ when you can't enumerate consumers. See `tooling.md` for the tool matrix.
 1. **Consumer test**: write an interaction (request → expected response) against
    a Pact mock; run the consumer's real client code against it. This generates a
    pact file — assert on *shape/types*, not exact values (use matchers).
+   **New tests use the V4 API**: `Pact` (an alias of `PactV4`) and `Matchers` from
+   `@pact-foundation/pact`, never `PactV3`/`MatchersV3` (or `MessageConsumerPact`
+   for events). Use the V3 classes only when extending an existing V3 suite.
 2. **Publish** the pact (consumer version = git sha, plus `--branch`) to a
    Pact Broker / PactFlow. Branches + environments replace the legacy tags.
 3. **Provider verification**: the provider replays every consumer interaction
@@ -136,6 +139,7 @@ spec fuzzing. Code in `reference.md` (provider verification; Schemathesis).
 | Deploy pipeline that publishes pacts but never gates | `can-i-deploy --to-environment <env>` as a blocking step |
 | Tightening a field / making it required and shipping quietly | That's a **breaking change** — bump the version, run `oasdiff breaking` |
 | Removing a field consumers use, trusting nobody noticed | Provider verification against published pacts catches it — run it |
+| New consumer test written with `PactV3` / `MatchersV3` (pact file says spec `3.0.0`) | `Pact` (= `PactV4`) + `Matchers`; V3 only to extend an existing V3 suite |
 | Shared global fixture the whole suite mutates | Per-interaction **provider states** (`given(...)` → state handler) |
 | Provider state with `setup` only, so data piles up and later interactions see it | `setup` + `teardown` per state, deleting the ids the setup created |
 | Provider state that only works if an earlier interaction ran first | Each state seeds everything its interaction needs |

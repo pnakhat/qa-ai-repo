@@ -1,7 +1,8 @@
 # LLM Evaluation with DeepEval — Setup & Reference
 
 Runnable, copy-pasteable DeepEval suites, a golden dataset, and CI wiring. The
-shapes below target **deepeval ≥ 4.2.3, < 5** (Python ≥ 3.9) and **pytest 8+**;
+shapes below target **deepeval ≥ 4.2.3, < 5** (Python ≥ 3.9) and **pytest 8+**
+(verified on 4.2.3; the Hallucination/Bias/Toxicity direction flip is from 4.2.0);
 check `pip show deepeval` for drift. DeepEval's judge defaults to OpenAI — set
 `OPENAI_API_KEY`, or wire a different provider (see `tooling.md`).
 
@@ -9,7 +10,7 @@ Changes that break older snippets:
 
 | Old | Current |
 |-----|---------|
-| Hallucination/Bias/Toxicity score the *flagged* share, pass at `score <= threshold` (3.x – 4.2.2) | Score the *clean* share, pass at `score >= threshold` (≥ 4.2.3) — re-baseline |
+| Hallucination/Bias/Toxicity score the *flagged* share, pass at `score <= threshold` (3.x – 4.1.x) | Score the *clean* share, pass at `score >= threshold` (≥ 4.2.0) — re-baseline |
 | `LLMTestCaseParams.ACTUAL_OUTPUT` | `SingleTurnParams.ACTUAL_OUTPUT` (old name warns) |
 | `ConversationalTestCase(turns=[LLMTestCase(...)])` | `turns=[Turn(role="user", content=...), Turn(role="assistant", content=...)]` |
 | `from deepeval.metrics.tool_correctness.tool_correctness import ToolCallParams` | `from deepeval.test_case import ToolCall, ToolCallParams` |
@@ -206,8 +207,8 @@ def test_grounded_and_factual(app):
     assert_test(tc, [
         # pass when >= 0.8 of the output's claims are supported by the retrieved docs
         FaithfulnessMetric(threshold=0.8, model=JUDGE, include_reason=True),
-        # deepeval >= 4.2.3: pass when >= 0.9 of ground-truth contexts are NOT contradicted
-        # (on <= 4.2.2 this metric was inverted: threshold=0.1 with score <= threshold)
+        # deepeval >= 4.2.0: pass when >= 0.9 of ground-truth contexts are NOT contradicted
+        # (on <= 4.1.x this metric was inverted: threshold=0.1 with score <= threshold)
         HallucinationMetric(threshold=0.9, model=JUDGE, include_reason=True),
     ])
 ```
@@ -493,9 +494,9 @@ Keep this next to your thresholds — mixing up direction silently inverts a gat
 
 | deepeval version | Metrics | Pass condition |
 |------------------|---------|----------------|
-| ≥ 4.2.3 | **All** built-in metrics, including Hallucination, Bias, Toxicity (score = clean share) | `score >= threshold` |
-| 3.x – 4.2.2 | AnswerRelevancy, Faithfulness, Contextual*, ToolCorrectness, TaskCompletion, GEval, Summarization, conversational | `score >= threshold` |
-| 3.x – 4.2.2 | Hallucination, Bias, Toxicity (score = flagged share) | `score <= threshold` |
+| ≥ 4.2.0 | **All** built-in metrics, including Hallucination, Bias, Toxicity (score = clean share) | `score >= threshold` |
+| 3.x – 4.1.x | AnswerRelevancy, Faithfulness, Contextual*, ToolCorrectness, TaskCompletion, GEval, Summarization, conversational | `score >= threshold` |
+| 3.x – 4.1.x | Hallucination, Bias, Toxicity (score = flagged share) | `score <= threshold` |
 
 Reference-based metrics that **require a label** in the golden: ContextualPrecision
 & ContextualRecall (`expected_output`), Hallucination (`context`), GEval-correctness

@@ -25,16 +25,28 @@ Playwright (≥ 1.56) ships three agents that drive the `playwright-test` MCP se
 | `playwright-test-healer` | Run failing tests, debug them live, fix locators/waits/data | edited specs |
 
 They are version-coupled to the installed `@playwright/test`, so install them from it,
-don't copy them: if the `playwright-test-planner` agent is missing, run
-`npx playwright init-agents --loop=claude` (it writes them under `.claude/agents/`;
-re-run after upgrading Playwright).
+don't copy them. If the `playwright-test-planner` definition is missing, run
+`npx playwright init-agents --loop=<loop>` for the tool you run in: `claude` writes
+`.claude/agents/`, `vscode` (or `copilot`) `.github/agents/`, `codex` `.codex/agents/`,
+`opencode` `.opencode/prompts/`. A tool with no loop of its own (Cursor, Windsurf) can
+use `--loop=vscode` just to get the playbooks. Re-run after upgrading Playwright.
+
+**Protect the MCP config first.** `init-agents --loop=claude` overwrites `.mcp.json`
+with only `playwright-test`, dropping every other server, including the `playwright`
+server this objective installed (other loops write their own config file, such as
+`.vscode/mcp.json` or `opencode.json`; treat it the same way). Copy the file before
+running it (`cp .mcp.json .mcp.json.bak`). Afterwards, merge back any server it
+dropped, or re-run `npx qa-ai-repo add playwright-e2e` (idempotent: it restores this
+objective's servers and keeps `playwright-test`). Then check that both `playwright`
+and `playwright-test` are present. When the objective is installed as a Claude Code
+plugin, its servers come from the plugin rather than `.mcp.json`, so they are unaffected.
 
 **How to use them depends on what you can launch:**
 - **The Agent tool lists `playwright-test-planner` / `-generator` / `-healer` as launchable
   types:** delegate each phase to the matching agent, one generator call per scenario
   (independent scenarios can run in parallel). Unless the caller told you to run inline.
 - **Otherwise** (no Agent tool, or those types aren't offered): run the phase yourself.
-  Read that agent's definition file under `.claude/agents/` as the playbook and call the
+  Read that agent's definition file (where `init-agents` wrote it, above) as the playbook and call the
   same `mcp__playwright-test__*` tools it lists (load them via ToolSearch if deferred).
 
 Their output is a draft. The generator writes raw `page.*` calls and the healer may mark

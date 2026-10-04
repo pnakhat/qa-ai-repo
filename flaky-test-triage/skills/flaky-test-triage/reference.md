@@ -358,8 +358,8 @@ the network, and that's the only place a retry is honest.
 
 ```ts
 // Playwright: kill animations so asserts don't land mid-transition
-// playwright.config.ts — only helps if the app honours prefers-reduced-motion
-use: { reducedMotion: 'reduce' },
+// playwright.config.ts excerpt, inside defineConfig — only helps if the app
+// honours prefers-reduced-motion:   use: { reducedMotion: 'reduce' },
 // or per test, forcing it regardless of app support:
 await page.emulateMedia({ reducedMotion: 'reduce' });
 await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;animation:none!important}' });
