@@ -12,16 +12,23 @@ tests that follow current industry practice instead of whatever it remembers.
 
 ## Quickstart (30 seconds)
 
-```bash
-npx qa-ai-repo list                          # see the objectives
-npx qa-ai-repo add playwright-e2e            # install into detected tools
-```
+**Claude Code** — this repo is a plugin marketplace; each objective is a plugin:
 
-Then, in Claude Code from the same project:
+```
+/plugin marketplace add pnakhat/qa-ai-repo
+/plugin install playwright-e2e@qa-ai-repo
+```
 
 ```
 > Use the qa-e2e-author agent to cover the checkout flow
 > /playwright-e2e review tests/e2e/login.spec.ts for flaky patterns
+```
+
+**Cursor, Windsurf, `AGENTS.md`** (or project-scoped Claude Code files):
+
+```bash
+npx qa-ai-repo list                          # see the objectives
+npx qa-ai-repo add playwright-e2e            # install into detected tools
 ```
 
 ## Objectives
@@ -91,7 +98,45 @@ repeatedly and across several objectives.
 | `agents/*.md` | `.claude/agents/<name>.md`      | `.cursor/rules/<name>.mdc`      | `.windsurf/rules/<name>.md`  | `AGENTS.md`      |
 | `mcp/*.json`  | `.mcp.json` (merged)            | `.cursor/mcp.json` (merged)     | global `mcp_config.json`     | printed to add   |
 
-## Install in Claude Code (CLI)
+## Install in Claude Code (plugin, recommended)
+
+Every objective is a Claude Code plugin with the same name, served from this
+repo's marketplace (`.claude-plugin/marketplace.json`).
+
+1. **Add the marketplace and install a plugin.** Inside Claude Code:
+
+   ```
+   /plugin marketplace add pnakhat/qa-ai-repo
+   /plugin install playwright-e2e@qa-ai-repo
+   ```
+
+   Or from your shell (add `--scope project` to record it in the repo's
+   `.claude/settings.json` so teammates get it too):
+
+   ```bash
+   claude plugin marketplace add pnakhat/qa-ai-repo
+   claude plugin install playwright-e2e@qa-ai-repo
+   ```
+
+2. **Verify** (run `/reload-plugins` or restart `claude` first):
+   - `/agents` lists `playwright-e2e:qa-e2e-author`.
+   - `/mcp` shows the plugin's servers (`playwright-test`, `playwright`) as connected.
+   - `/playwright-e2e:playwright-e2e` (or just `/playwright-e2e`) runs the skill.
+   - `claude plugin details playwright-e2e` prints the full component inventory.
+3. **Use it:** "Use the qa-e2e-author agent to cover the checkout flow". The
+   objective-specific extras in the npx steps below (browsers, `init-agents`)
+   apply here too.
+4. **Update:** `claude plugin marketplace update qa-ai-repo` (or `/plugin` →
+   Marketplaces → Update) pulls the catalog; plugins move to a new release when
+   its `version` changes.
+5. **Uninstall:** `/plugin` → Installed, or
+   `claude plugin uninstall playwright-e2e@qa-ai-repo`. To drop everything,
+   `claude plugin marketplace remove qa-ai-repo`.
+
+## Install in Claude Code (npx, project files)
+
+Use this when you want the skill, agent, and MCP config committed as plain files
+in one project instead of installed as a plugin.
 
 1. **Install from the project root:**
 
@@ -125,7 +170,7 @@ repeatedly and across several objectives.
    listed in step 1 and remove the objective's entries from `mcpServers` in
    `.mcp.json`.
 
-Installs are **project-scoped**. There is no global `~/.claude` install today.
+npx installs are **project-scoped**. For a user-wide install, use the plugin route.
 
 ## How agents, skills and MCP fit together
 
@@ -133,8 +178,16 @@ Installs are **project-scoped**. There is no global `~/.claude` install today.
   tables, and anti-patterns. Long code and config go in sibling files (such as
   `reference.md`), which travel with the skill.
 - **Agents reference the skill; they don't copy it.** An agent's frontmatter
-  carries `skills: <skill-name>`, so Claude Code preloads the skill. The agent body
-  holds only the role, the process steps, and the report format.
+  carries `skills: <objective>:<skill>` (the plugin-namespaced name, so a plugin
+  agent never picks up a same-named project or user skill), and Claude Code
+  preloads the skill. The npx installer rewrites it to the bare `<skill>` name for
+  `.claude/agents/`. The agent body holds only the role, the process steps, and
+  the report format.
+- **Agents name skill files without a path**: "the `reference.md` file in the
+  `<skill>` skill's directory". Claude Code resolves that from the preloaded
+  skill's base directory, whether it lives in `.claude/skills/` or the plugin
+  cache. The installer turns it into a real path for Cursor, Windsurf, and
+  `AGENTS.md`.
 - **No `tools:` allowlist when an agent uses MCP.** An explicit allowlist leaves out
   `mcp__*` tools and silently disables the server the objective installs. `npm test`
   enforces this.
@@ -158,19 +211,34 @@ npx qa-ai-repo add my-objective     # try it locally
       **what** the skill does **and when** to use it.
 - [ ] Keep `SKILL.md` focused. Long code goes in sibling files, referenced as
       `` `reference.md` ``, and every referenced file must exist.
-- [ ] Agent frontmatter: `name`, `description`, `skills: <skill>`. Use no `tools:`
+- [ ] Agent frontmatter: `name`, `description`, `skills: <objective>:<skill>`.
+      Refer to skill files as "the `x.md` file in the `<skill>` skill's
+      directory", never `.claude/skills/...`. Use no `tools:`
       allowlist if the agent relies on MCP. Don't duplicate the skill's rules in the
       agent body.
 - [ ] Verify commands and APIs against current upstream docs, not memory.
+- [ ] `npm run build:plugins` regenerates the plugin manifests; commit them.
 - [ ] `npm test` passes.
 - [ ] `node bin/qa-ai.js add <objective> --tool all --dry-run` succeeds.
+- [ ] `claude plugin validate --strict .` and `claude plugin validate --strict <objective>` pass.
 
 ## Testing this repo
 
 ```bash
-npm test                                            # node --test: install adapters, dead links, MCP/tools rule
+npm test                                            # node --test: install adapters, dead links, MCP/tools rule, stale plugin manifests
 node bin/qa-ai.js add <objective> --tool all --dry-run
+claude plugin validate --strict .                   # marketplace + every plugin entry
+claude plugin marketplace add ./ && claude plugin install <objective>@qa-ai-repo   # local end-to-end
 ```
+
+### Plugin manifests are generated
+
+`objective.json` and `mcp/*.json` are the source of truth.
+`npm run build:plugins` (`scripts/build-plugins.js`) writes
+`.claude-plugin/marketplace.json` and each `<objective>/.claude-plugin/plugin.json`
+(MCP servers inlined, version/author/license from `package.json`). The output is
+committed because Claude Code reads marketplaces from git, and `npm test` fails if
+it is stale.
 
 Maintainers can also run a local `qa-ai-repo-tester` Claude Code agent
 (`.claude/agents/qa-ai-repo-tester.md`). It is gitignored and not shipped. It runs
@@ -193,9 +261,12 @@ them.
 
 1. Add a repo secret `NPM_TOKEN` (an npm *Automation* access token):
    Settings → Secrets and variables → Actions → New repository secret.
-2. Bump `version` in `package.json` and commit.
+2. Bump `version` in `package.json`, run `npm run build:plugins` (plugin
+   versions follow `package.json`; installed plugins only update when it
+   changes), and commit both.
 3. Create a GitHub Release (tag e.g. `v0.1.0`). The workflow smoke-tests the
-   CLI and publishes; it skips automatically if that version is already on npm.
+   CLI, runs `npm test` and `claude plugin validate --strict`, and publishes; it
+   skips automatically if that version is already on npm.
 
 The workflow publishes with npm **provenance** (verified build attestation).
 `--provenance` and the `id-token: write` permission enable it. Provenance requires
