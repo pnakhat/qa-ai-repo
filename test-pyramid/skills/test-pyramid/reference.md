@@ -41,6 +41,8 @@ Milliseconds to run, one assertion per rule; there is no cheaper place to prove 
 
 ```ts
 // web/src/features/checkout/Checkout.test.tsx  (Vitest + Testing Library + MSW)
+// toBeInTheDocument comes from '@testing-library/jest-dom/vitest' in the Vitest setup file.
+import { beforeAll, afterEach, afterAll, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -120,6 +122,7 @@ re-test through the UI.
 
 ```ts
 // orders-svc/test/order-repo.int.test.ts  (Vitest + Testcontainers)
+import { beforeAll, afterAll, it, expect } from 'vitest';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Pool } from 'pg';
 import { migrate } from '../src/db/migrate';
@@ -161,39 +164,41 @@ CI-portable. Keep these far fewer than the unit tests.
 ## Contract — consumer expectation pinned so the seam can't drift (Pact)
 
 ```ts
-// web/test/orders-api.pact.test.ts  (Pact consumer)
-import { PactV3, MatchersV3 } from '@pact-foundation/pact';
+// web/test/orders-api.pact.test.ts  (Pact JS consumer — `Pact` is the V4 API)
+import { it, expect } from 'vitest';
+import { Pact, Matchers } from '@pact-foundation/pact';
 import { OrdersClient } from '../src/api/orders-client';
 
-const { like, integer } = MatchersV3;
-const provider = new PactV3({ consumer: 'web', provider: 'orders-svc' });
+const { like, integer } = Matchers;
+const provider = new Pact({ consumer: 'web', provider: 'orders-svc' });
 
 it('POST /api/orders returns a confirmed order', async () => {
-  provider
+  await provider
+    .addInteraction()
     .given('the customer is within their credit limit')
     .uponReceiving('a request to place an order')
-    .withRequest({
-      method: 'POST',
-      path: '/api/orders',
-      body: { items: [{ sku: 'A', qty: 1 }] },
+    .withRequest('POST', '/api/orders', (b) => {
+      b.headers({ 'Content-Type': 'application/json' });
+      b.jsonBody({ items: [{ sku: 'A', qty: 1 }] });
     })
-    .willRespondWith({
-      status: 201,
-      body: { id: like('ord_123'), status: like('confirmed'), total: integer(1000) },
+    .willRespondWith(201, (b) => {
+      b.jsonBody({ id: like('ord_123'), status: like('confirmed'), total: integer(1000) });
+    })
+    .executeTest(async (mock) => {
+      const client = new OrdersClient(mock.url);
+      const order = await client.placeOrder({ items: [{ sku: 'A', qty: 1 }] });
+      expect(order.status).toBe('confirmed');
     });
-
-  await provider.executeTest(async (mock) => {
-    const client = new OrdersClient(mock.url);
-    const order = await client.placeOrder({ items: [{ sku: 'A', qty: 1 }] });
-    expect(order.status).toBe('confirmed');
-  });
 });
 ```
 
-The generated pact is published to a broker; `orders-svc` verifies it in its own CI:
+The generated pact is published to a broker with its branch
+(`pact-broker publish ./pacts --consumer-app-version $GIT_SHA --branch $GIT_BRANCH`);
+`orders-svc` verifies it in its own CI:
 
 ```ts
 // orders-svc/test/orders-api.verify.test.ts  (Pact provider verification)
+import { it } from 'vitest';
 import { Verifier } from '@pact-foundation/pact';
 
 it('honors every consumer contract', () =>
@@ -201,6 +206,10 @@ it('honors every consumer contract', () =>
     provider: 'orders-svc',
     providerBaseUrl: 'http://localhost:3000',
     pactBrokerUrl: process.env.PACT_BROKER_URL,
+    consumerVersionSelectors: [{ mainBranch: true }, { deployedOrReleased: true }, { matchingBranch: true }],
+    providerVersion: process.env.GIT_SHA,
+    providerVersionBranch: process.env.GIT_BRANCH,
+    publishVerificationResult: process.env.CI === 'true', // only CI results count for can-i-deploy
     stateHandlers: {
       'the customer is within their credit limit': async () => seedCustomerWithCredit(),
     },
@@ -210,8 +219,9 @@ it('honors every consumer contract', () =>
 **Why contract:** the FE and BE are tested independently above; the one thing neither
 proves alone is that they still *agree* on the request/response shape. A contract pins that
 agreement on both sides and breaks in CI the moment either drifts — replacing the
-cross-service E2E you would otherwise need. (An OpenAPI/Schemathesis or Dredd check gives a
-schema-level equivalent when you own both sides and don't need per-consumer expectations.)
+cross-service E2E you would otherwise need. (An OpenAPI conformance check — Schemathesis against
+the running provider, oasdiff on the spec in PRs — gives a schema-level equivalent when you
+own both sides and don't need per-consumer expectations.)
 
 ---
 
@@ -219,6 +229,7 @@ schema-level equivalent when you own both sides and don't need per-consumer expe
 
 ```ts
 // notif-worker/test/order-events.int.test.ts  (Vitest + Testcontainers, RabbitMQ)
+import { beforeAll, afterAll, it, expect, vi } from 'vitest';
 import { RabbitMQContainer, StartedRabbitMQContainer } from '@testcontainers/rabbitmq';
 import amqp from 'amqplib';
 import { publishOrderPlaced } from '../src/publisher';
@@ -227,7 +238,7 @@ import { startConsumer } from '../src/consumer';
 let container: StartedRabbitMQContainer;
 
 beforeAll(async () => {
-  container = await new RabbitMQContainer('rabbitmq:3.13-alpine').start();
+  container = await new RabbitMQContainer('rabbitmq:4-alpine').start();
 }, 60_000);
 afterAll(() => container.stop());
 

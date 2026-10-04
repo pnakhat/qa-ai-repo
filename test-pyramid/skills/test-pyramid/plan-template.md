@@ -42,14 +42,20 @@ covered lower down.
 ## 6. Cross-cutting
 Performance/load, security (SAST/DAST/deps), accessibility — owners and cadence.
 
-## 7. Target proportions & current gap
-| Level | Target | Now | Action |
-|-------|--------|-----|--------|
-| Unit | ~70% | ? | |
-| Integration/component | ~20% | ? | |
-| Contract | ~7% | ? | |
-| E2E | ~3% | ? | |
+## 7. Target shape & current gap
+Chosen model: pyramid / trophy / honeycomb — and why (architecture evidence).
+| Level (size) | Target % | Now (count) | Now (CI minutes) | Action |
+|--------------|----------|-------------|------------------|--------|
+| Static (lint/types) | gate | | | |
+| Unit (small) | | | | |
+| Integration/component (medium) | | | | |
+| Contract | | | | |
+| E2E (large) | handful | | | |
 Note if the current suite is inverted and the rebalancing moves.
+
+## 7a. CI wiring
+Which suite runs at pre-commit / PR / main / pre-deploy (`can-i-deploy`) / nightly,
+and which of those block merge or deploy.
 
 ## 8. Tooling summary
 Per layer: chosen runners, mocking, contract tooling, CI reporting.
