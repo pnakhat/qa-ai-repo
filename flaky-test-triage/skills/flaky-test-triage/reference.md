@@ -25,13 +25,17 @@ npx playwright test tests/e2e/checkout.spec.ts --repeat-each=50 --workers=4
 npx playwright test tests/e2e/checkout.spec.ts            # alone
 npx playwright test                                       # full suite
 
-# CI: label (do NOT cure) flake — any test that survives a retry is a finding
-npx playwright test --retries=2 --reporter=json > run.json
+# CI: label (do NOT cure) flake — retries mark pass-on-retry tests "flaky",
+# --fail-on-flaky-tests keeps the gate red when any test needed a retry
+npx playwright test --retries=2 --fail-on-flaky-tests --reporter=json > run.json
 
-# Extract tests that passed-only-after-retry from the JSON report
-jq -r '.suites[].specs[] | select(.tests[].results | length > 1)
-       | select([.tests[].results[].status] | index("passed"))
-       | .title' run.json
+# List flaky tests from the JSON report (suites nest, so walk the whole tree)
+jq -r '[.. | objects | select(has("specs")) | .specs[]
+        | select(any(.tests[]; .status == "flaky"))
+        | "\(.file):\(.line) \(.title)"] | unique[]' run.json
+
+# Re-run only what failed last time
+npx playwright test --last-failed
 ```
 
 ### Jest / Vitest (TS/JS)
@@ -44,8 +48,15 @@ for i in $(seq 1 50); do npx jest -t 'applies discount' || { echo "flaked on $i"
 npx jest --runInBand           # serial
 npx jest --maxWorkers=4        # parallel
 
+# Jest (>= 29.2, jest-circus): shuffle test order; reuse the printed seed to reproduce
+npx jest --randomize --showSeed
+npx jest --randomize --seed=1234
+
+# Jest: find leaked handles (timers, sockets, DB pools) — implies --runInBand
+npx jest --detectOpenHandles
+
 # Vitest: repeat + shuffle order + vary seed
-npx vitest run --repeats 50 checkout.test.ts
+npx vitest run --repeats=50 checkout.test.ts
 npx vitest run --sequence.shuffle --sequence.seed=12345
 ```
 
@@ -60,7 +71,7 @@ pytest tests/ --flake-finder --flake-runs=30
 
 # pytest-randomly: shuffle order + seed (re-run with the SAME seed to reproduce)
 pytest tests/                       # prints "Using --randomly-seed=NNN"
-pytest tests/ -p randomly -p no:cacheprovider --randomly-seed=NNN
+pytest tests/ --randomly-seed=NNN   # or --randomly-seed=last
 
 # Serial vs. parallel (pytest-xdist) — divergence = shared state
 pytest tests/                       # serial
@@ -74,7 +85,12 @@ TZ=Pacific/Kiritimati pytest tests/ # +14h TZ shakes out date-boundary flake
 
 The retry log **is** the flake inventory — every "passed on attempt 2" is a flake
 you already paid for. Aggregate pass-on-retry counts per test over a rolling window
-and sort descending; that ranking is your triage queue.
+and sort descending; that ranking is your triage queue. Emit JUnit XML
+(`--reporter=junit`, `jest-junit`, `pytest --junitxml`) so any CI analytics tool
+(GitHub/GitLab test reports, Buildkite/Datadog/Trunk flaky-test views) can
+aggregate per-test history. Keep results separated by configuration (browser, OS,
+shard) — Google's flaky-test infra does this so an environment-only flake isn't
+blamed on the test everywhere.
 
 ---
 
@@ -135,12 +151,15 @@ test('checkout applies promo', { tag: '@flaky' }, async ({ page }) => {
 ```
 
 ```python
-# pytest — reason string carries owner/issue/SLA; keep it collectable in the flaky lane
+# pytest — use a custom `quarantine` marker. Don't reuse `flaky`: pytest-rerunfailures
+# and the `flaky` plugin both treat that name as "retry me", which hides the flake.
+# pytest.ini:  markers = quarantine(reason): flaky test held out of the blocking lane
 import pytest
 
-@pytest.mark.flaky(reason="owner=@aditi issue=QA-482 sla=2026-07-21 score=0.06")
+@pytest.mark.quarantine(reason="owner=@aditi issue=QA-482 sla=2026-07-21 score=0.06")
 def test_checkout_applies_promo():
     ...
+# blocking lane: pytest -m "not quarantine"     flaky lane: pytest -m quarantine --count=20
 ```
 
 ### Step 2 — open the tracking issue
@@ -155,12 +174,18 @@ bar (`N=20 consecutive green runs in the flaky lane`).
 # .github/workflows/tests.yml — flaky lane runs but never blocks the merge
 jobs:
   test:                                   # blocking gate — zero tolerance for flake
+    runs-on: ubuntu-latest
     steps:
-      - run: npx playwright test --grep-invert @flaky --retries=0
+      - uses: actions/checkout@v4
+      - run: npm ci && npx playwright install --with-deps
+      - run: npx playwright test --grep-invert @flaky --retries=2 --fail-on-flaky-tests
 
   flaky-watch:                            # non-blocking — measures score trending to 0
+    runs-on: ubuntu-latest
     continue-on-error: true               # never fails the pipeline
     steps:
+      - uses: actions/checkout@v4
+      - run: npm ci && npx playwright install --with-deps
       - run: npx playwright test --grep @flaky --repeat-each=20 --retries=0
       # If any @flaky test is now 20/20 green → un-quarantine (remove tag).
       # If SLA date has passed and it still flakes → auto-escalate: fix-or-delete.
@@ -193,11 +218,15 @@ expect(await page.getByTestId('order-total').textContent()).toBe('$90.00');
 ```ts
 await page.getByRole('button', { name: 'Apply' }).click();
 await expect(page.getByTestId('order-total')).toHaveText('$90.00'); // ✅ waits for the state
-// If it's gated on a request, wait on THAT, not the clock:
-await Promise.all([
-  page.waitForResponse(r => r.url().includes('/api/cart/discount') && r.ok()),
-  page.getByRole('button', { name: 'Apply' }).click(),
-]);
+```
+
+If no visible state changes, wait on the request instead — start listening
+*before* the click so a fast response isn't missed:
+
+```ts
+const discount = page.waitForResponse(r => r.url().includes('/api/cart/discount') && r.ok());
+await page.getByRole('button', { name: 'Apply' }).click();
+await discount;
 ```
 
 ### Recipe B — shared state & ordering: cross-test leak → per-test setup
@@ -250,15 +279,24 @@ test('coupon shows a 7-day expiry', () => {
 **After** — freeze time so "now" is fixed and reproducible.
 
 ```ts
-import { vi } from 'vitest'; // or jest.useFakeTimers()
+import { vi, beforeEach, afterEach, test, expect } from 'vitest'; // Jest: jest.useFakeTimers / jest.setSystemTime
 
-test('coupon shows a 7-day expiry', () => {
+beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-03-01T12:00:00Z'));    // ✅ deterministic "now"
+});
+afterEach(() => vi.useRealTimers());                       // restored even if the test fails
+
+test('coupon shows a 7-day expiry', () => {
   const coupon = issueCoupon();
   expect(coupon.expiresAt).toBe(new Date('2026-03-08T12:00:00Z').getTime());
-  vi.useRealTimers();
 });
+```
+
+```ts
+// Playwright E2E: freeze the browser clock (Playwright >= 1.45)
+await page.clock.setFixedTime(new Date('2026-03-01T12:00:00Z'));
+await page.goto('/coupons');
 ```
 
 ```python
@@ -274,7 +312,8 @@ def test_coupon_expiry():
 Seed RNG the same way when randomness drives the assertion:
 
 ```ts
-// Inject a seeded RNG instead of Math.random() so "random" is reproducible.
+// Inject a seeded RNG instead of Math.random() so "random" is reproducible
+// (seedrandom shown; any seedable PRNG or faker.seed(42) works). Log the seed.
 const rng = seedrandom('flake-triage-42');
 const pick = items[Math.floor(rng() * items.length)];    // ✅ same pick every run
 ```
@@ -301,8 +340,7 @@ test('checkout shows success on payment', async ({ page }) => {
   );
   await page.getByRole('button', { name: 'Pay' }).click();
   await expect(page.getByText('Payment successful')).toBeVisible();
-  await page.unroute('**/v1/payment_intents**');          // scope the stub to this test
-});
+});  // routes live on this test's page, so they die with it — no unroute needed
 ```
 
 Keep **one** real-integration test against the live provider in a separate,
@@ -315,18 +353,20 @@ the network, and that's the only place a retry is honest.
 
 ```ts
 // Playwright: kill animations so asserts don't land mid-transition
-// playwright.config.ts
+// playwright.config.ts — only helps if the app honours prefers-reduced-motion
 use: { reducedMotion: 'reduce' },
-// or per test:
+// or per test, forcing it regardless of app support:
 await page.emulateMedia({ reducedMotion: 'reduce' });
 await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;animation:none!important}' });
+// screenshots: expect(page).toHaveScreenshot({ animations: 'disabled' }) (the default)
 ```
 
 ```ts
-// Resource leaks: dispose in teardown so late tests don't flake on exhaustion
-test.afterEach(async ({}, testInfo) => {
-  await context.close();     // browser contexts
-  clearInterval(pollTimer);  // timers
-  await pool.end();          // DB connections
-});
+// Resource leaks (Jest/Vitest): dispose what each test/file opened.
+// Playwright's built-in page/context fixtures are closed for you — only
+// close contexts you created yourself with browser.newContext().
+let pollTimer: NodeJS.Timeout;
+afterEach(() => clearInterval(pollTimer));   // timers
+afterAll(async () => { await pool.end(); }); // DB connections
+// Find what's still open: npx jest --detectOpenHandles
 ```

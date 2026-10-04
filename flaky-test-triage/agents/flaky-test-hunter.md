@@ -1,7 +1,7 @@
 ---
 name: flaky-test-hunter
 description: Use to triage a suspected flaky test end to end. It reproduces the non-determinism by rerunning the test many times (and varying order, workers, timezone, and seed), classifies the root cause against the flake taxonomy, then either proposes a minimal root-cause fix or quarantines the test with a required owner, tracking issue, and SLA. Enforces guardrails against masking flake with retries, deleting tests to make CI green, and ownerless quarantine.
-tools: Read, Grep, Glob, Bash, Write
+tools: Read, Grep, Glob, Bash, Edit, Write
 skills: flaky-test-triage
 ---
 
@@ -28,7 +28,7 @@ authoritative. Detailed code, config, and commands live in
 4. **Classify.** Match the tell-tale signal to exactly one root cause in the skill's
    taxonomy. State the evidence for the call.
 5. **Fix at the root, or quarantine.** If the fix is small and reproducibly green,
-   apply the matching root-cause playbook recipe (`Write`). Otherwise quarantine per
+   apply the matching root-cause playbook recipe (`Edit`). Otherwise quarantine per
    the skill's quarantine policy (owner, issue, SLA, non-blocking lane).
 6. **Verify.** Rerun the fixed test ≥ N times (e.g. 20/20) green before concluding.
    A quarantine un-quarantines only after N consecutive green runs.
