@@ -44,7 +44,9 @@ Four browser sessions, four logins, ~40s, all to check arithmetic.
 ### After — `tests/api/discount.spec.ts` (parameterized API test)
 
 ```ts
-import { test, expect, request } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+// `request` is the built-in APIRequestContext fixture; relative URLs resolve
+// against `use.baseURL` in playwright.config — set it, or pass absolute URLs.
 
 const cases = [
   { code: 'SAVE10', subtotal: 100, expectedTotal: 90 },
@@ -58,7 +60,7 @@ for (const c of cases) {
     const res = await request.post('/api/cart/discount', {
       data: { subtotal: c.subtotal, code: c.code },
     });
-    expect(res.status()).toBe(200);
+    expect(res).toBeOK();                       // 2xx, prints the body on failure
     expect((await res.json()).total).toBe(c.expectedTotal);
   });
 }
@@ -137,12 +139,16 @@ def test_delete_project_authz(role, expected_status, token_for):
 ```
 
 `token_for` is a fixture that mints/returns a token per role via the auth API — no
-browser. Plus **one** retained UI smoke that the viewer sees no delete control:
+browser. `viewer_driver` logs in once via the API and injects the session with
+`driver.add_cookie(...)` (Selenium requires navigating to the domain first). Plus **one** retained UI smoke that the viewer sees no delete control:
 
 ```python
-def test_viewer_ui_hides_delete(viewer_session):  # storage-state / cookie fixture
-    viewer_session.get(f"{BASE}/projects/1")
-    assert viewer_session.find_elements(By.ROLE, "button", name="Delete") == []
+from selenium.webdriver.common.by import By
+
+def test_viewer_ui_hides_delete(viewer_driver):  # fixture: driver with the viewer's session cookie pre-set
+    viewer_driver.get(f"{BASE}/projects/1")
+    # Selenium has no role locator — match the accessible name instead of a styling class
+    assert viewer_driver.find_elements(By.XPATH, "//button[normalize-space()='Delete' or @aria-label='Delete']") == []
 ```
 
 The authz *rule* is proven at the API for every role; the UI test only proves the
@@ -172,63 +178,86 @@ an invalid form shows *an* inline error (proves the form surfaces server errors)
 
 ## Ripgrep catalog — inventory a suite
 
-Run from the repo root. `--pcre2` enables alternation/lookarounds; `-l` lists
-files, `-c` counts matches per file, `-n` shows line numbers. Adjust globs
+Run from the repo root. ripgrep's default regex engine handles alternation, `\b`
+and `\s` — no `--pcre2` needed (and some distro builds lack it). `-l` lists
+files, `-c` counts matching lines *per file* (pipe to `awk` to total), `-n`
+shows line numbers. Adjust globs
 (`-g '*.spec.ts'`, `-g '*_test.py'`) to your layout.
 
 ### Locate UI/E2E suites by framework × language
 
 ```bash
 # Playwright (TS/JS, Python, Java, C#)
-rg -l --pcre2 '@playwright/test|playwright\.sync_api|playwright\.async_api|com\.microsoft\.playwright|Microsoft\.Playwright'
+rg -l '@playwright/test|playwright\.sync_api|playwright\.async_api|com\.microsoft\.playwright|Microsoft\.Playwright'
 
 # Selenium / WebDriver (Python, Java, C#, Ruby, JS)
-rg -l --pcre2 'from selenium import|org\.openqa\.selenium|OpenQA\.Selenium|selenium-webdriver|require .selenium-webdriver.'
+rg -l 'from selenium import|org\.openqa\.selenium|OpenQA\.Selenium|selenium-webdriver'
 
 # WebdriverIO (JS/TS)
-rg -l --pcre2 '@wdio/|browser\.url\(|\$\$?\('
+rg -l '@wdio/|browser\.url\(|browser\.\$\$?\('   # bare `$(` matches jQuery/shell too
+rg --files -g 'wdio.conf.*'
 
 # Cypress (JS/TS) & Protractor (legacy) — same rubric applies
-rg -l --pcre2 'cy\.visit\(|cy\.get\('        # Cypress
-rg -l --pcre2 'browser\.get\(|element\(by\.' # Protractor → flag for migration
+rg -l 'cy\.visit\(|cy\.get\('        # Cypress
+rg -l 'browser\.get\(|element\(by\.' # Protractor → flag for migration
 ```
 
 ### Count test cases per language (UI vs API)
 
 ```bash
 # UI test cases — point at your UI/e2e dirs
-rg -c --pcre2 '\b(test|it)\s*\(' -g '*.spec.ts' -g '*.spec.js' tests/e2e   # JS/TS
-rg -c --pcre2 'def\s+test_'        -g '*.py'  tests/ui                      # Python
-rg -c --pcre2 '@Test\b'            -g '*.java' src/test                     # Java
-rg -c --pcre2 '\[(Test|Fact|Theory)\]' -g '*.cs' tests                     # C#
-rg -c --pcre2 "\b(it|scenario)\s+['\"]" -g '*_spec.rb' spec                 # Ruby/RSpec
+rg -c '^\s*(test|it)(\.(only|skip|fixme))?\s*\(' -g '*.spec.ts' -g '*.spec.js' tests/e2e   # JS/TS
+rg -c 'def\s+test_'        -g '*.py'  tests/ui                      # Python
+rg -c '@Test\b'            -g '*.java' src/test                     # Java
+rg -c '\[(Test|Fact|Theory)\]' -g '*.cs' tests                     # C#
+rg -c "\b(it|scenario)\s+['\"]" -g '*_spec.rb' spec                 # Ruby/RSpec
 
 # API/integration test cases — point at your api/integration dirs, same patterns
-rg -c --pcre2 '\b(test|it)\s*\(|def\s+test_|@Test\b|\[(Test|Fact|Theory)\]' tests/api tests/integration
+rg -c '^\s*(test|it)(\.(only|skip|fixme))?\s*\(|def\s+test_|@Test\b|\[(Test|Fact|Theory)\]' tests/api tests/integration
 ```
 
-Sum the UI counts and the API counts to get the pyramid shape. UI ≫ API is the
-inversion this audit exists to fix.
+Totals: append `| awk -F: '{s+=$NF} END {print s+0}'` to any `-c` command.
+These are static counts; prefer the runner's own listing when it works
+(`npx playwright test --list`, `pytest --collect-only -q`, `dotnet test
+--list-tests`); use rg where the runner has no listing mode. Sum the UI and API
+counts to get the pyramid shape. UI ≫ API is the inversion this audit exists to fix.
 
 ### Find the demotable smells inside UI test bodies
 
 ```bash
 # Data-driven matrices (parameterization driving a form)
-rg -n --pcre2 'test\.each|it\.each|@pytest\.mark\.parametrize|@ParameterizedTest|\[TestCase\(|Examples:'
+rg -n 'test\.each|it\.each|@pytest\.mark\.parametrize|@ParameterizedTest|\[TestCase\(|Examples:'
 
 # Data-only assertions (checking state/JSON/status, not the DOM)
-rg -n --pcre2 'expect\(res|expect\(data|\.status\)\.toBe|assert response|assert data\[|assertEquals\(.*response|Assert\.(Equal|True)\(.*response'
+rg -n 'expect\(res|expect\(data|\.status\)\.toBe|assert response|assert data\[|assertEquals\(.*response|Assert\.(Equal|True)\(.*response'
 
 # Direct API/DB calls inside a browser test
-rg -n --pcre2 'fetch\(|axios|requests\.(get|post|put|delete)|RestAssured|HttpClient|new .*Connection|SELECT .* FROM'
+rg -n 'fetch\(|axios|requests\.(get|post|put|delete)|RestAssured|HttpClient|new .*Connection|SELECT .* FROM'
 
 # UI-driven login/seed setup to relocate
-rg -n --pcre2 -B1 -A3 'beforeEach|beforeAll|setUp\(|Background:|before\(:each\)'
+rg -n -B1 -A3 'beforeEach|beforeAll|setUp\(|Background:|before\(:each\)'
 
 # Role/permission loops
-rg -n --pcre2 -i 'roles?\s*=|for.*role|as_(admin|user|viewer|editor)|login_as'
+rg -n -i 'roles?\s*=|for.*role|as_(admin|user|viewer|editor)|login_as'
 ```
 
 Every file these surface is a read-and-classify candidate. Open the body, apply
 the rubric in `detection-signals.md`, and record the verdict + target endpoint/unit
 in `audit-report-template.md`.
+
+---
+
+## Where demoted tests land — API client per stack
+
+Use what the project already has; these need no new framework.
+
+| Stack | API-level target | UI-setup shortcut (skip UI login) |
+|-------|------------------|-----------------------------------|
+| Playwright TS/JS | `request` fixture / `playwright.request.newContext()` (`APIRequestContext`), same runner | setup project + `storageState` |
+| Playwright Python | `playwright.request.new_context(base_url=...)` or `requests`/`httpx` under pytest | `browser.new_context(storage_state=...)` |
+| Playwright Java / .NET | `playwright.request().newContext()` / `Playwright.APIRequest.NewContextAsync()`, or REST Assured / `HttpClient` | `setStorageStatePath` / `StorageStatePath` |
+| WebdriverIO (v9) | No built-in HTTP client — use `fetch` (Node 18+), `supertest`, or `axios` in the same Mocha/Jasmine runner | `browser.setCookies(...)` after an API login |
+| Selenium 4 (Java) | REST Assured or `java.net.http.HttpClient` with JUnit 5 `@ParameterizedTest` | `driver.manage().addCookie(...)` after navigating to the domain |
+| Selenium 4 (Python) | `requests`/`httpx` + `@pytest.mark.parametrize` | `driver.add_cookie(...)` |
+| Selenium 4 (C#) | `HttpClient` + xUnit `[Theory]`/NUnit `[TestCase]` | `driver.Manage().Cookies.AddCookie(...)` |
+| Cypress | `cy.request()` (no page visit) | `cy.session()` |

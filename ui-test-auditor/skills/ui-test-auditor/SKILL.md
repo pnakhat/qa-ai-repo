@@ -9,7 +9,7 @@ Browser tests are the slowest, flakiest, most expensive tests to run and
 maintain. Teams overuse them — verifying business rules, validation, permissions,
 and data variations *through the UI* when a fast API or unit test would prove the
 same thing. This skill audits the suite and reclassifies each test:
-**keep-as-UI**, **demote-to-API**, or **demote-to-unit**. See
+**keep-as-UI**, **demote-to-API**, **demote-to-component**, or **demote-to-unit**. See
 `detection-signals.md` for framework/language markers and the exact rubric, and
 `reference.md` for concrete before/after conversions and copy-pasteable ripgrep
 inventory commands.
@@ -29,7 +29,17 @@ inventory commands.
    - **Demote-to-API** — business rules, validation messages, permission/authz,
      error codes, pagination/filtering/sorting, calculations, data
      transformations — anything asserted on data/state, reachable via an HTTP call.
+   - **Demote-to-component** — rendering/interaction of *one* component in
+     isolation (conditional UI per role/state, a form's inline errors) when the
+     repo has a component harness (Testing Library, Playwright CT, Storybook
+     interaction tests). Only recommend it if such a harness exists or is cheap to add.
    - **Demote-to-unit** — pure logic with no I/O.
+
+   **Check where the rule lives before choosing API vs unit/component.** A
+   validation or calculation enforced *only* client-side cannot be proven by an
+   API test — demote it to a unit/component test of the validator, and flag the
+   missing server-side check as a defect (client-only validation is bypassable).
+   Grep the backend for the rule; don't assume.
 4. **Find the repetition.** The biggest win: **N UI tests that differ only by
    input data** (each retyping a form to check a different validation/branch).
    Collapse them into one parameterized API test plus **one** UI happy-path smoke.
@@ -65,20 +75,26 @@ per-language variants):
 
 ```bash
 # 1. Locate UI/E2E suites regardless of framework/language
-rg -l --pcre2 '@playwright/test|playwright\.sync_api|com\.microsoft\.playwright|Microsoft\.Playwright' # Playwright
-rg -l --pcre2 'selenium|webdriver|OpenQA\.Selenium|ChromeDriver' # Selenium/WebDriver
-rg -l --pcre2 '@wdio/|browser\.url\(' # WebdriverIO
+rg -l '@playwright/test|playwright\.(sync|async)_api|com\.microsoft\.playwright|Microsoft\.Playwright' # Playwright
+rg -l 'from selenium import|org\.openqa\.selenium|OpenQA\.Selenium|selenium-webdriver'                # Selenium/WebDriver
+rg -l '@wdio/|browser\.url\(' ; rg --files -g 'wdio.conf.*'                                          # WebdriverIO
 
-# 2. Count UI test cases vs API/integration test cases (adjust globs to your dirs)
-rg -c --pcre2 '\b(test|it)\(|def test_|@Test|\[(Test|Fact)\]' tests/e2e tests/ui        # UI cases
-rg -c --pcre2 '\b(test|it)\(|def test_|@Test|\[(Test|Fact)\]' tests/api tests/integration # API cases
+# 2. Count UI vs API test cases — rg -c is per file, so sum it (adjust dirs)
+rg -c '^\s*(test|it)(\.(only|skip|fixme))?\s*\(|def test_|@Test\b|\[(Test|Fact|Theory)\]' tests/e2e tests/ui \
+  | awk -F: '{s+=$NF} END {print "UI cases:", s+0}'
+rg -c '^\s*(test|it)(\.(only|skip|fixme))?\s*\(|def test_|@Test\b|\[(Test|Fact|Theory)\]' tests/api tests/integration \
+  | awk -F: '{s+=$NF} END {print "API cases:", s+0}'
 
-# 3. Find the overuse smells inside UI test bodies
-rg -n --pcre2 'test\.each|@pytest\.mark\.parametrize|@ParameterizedTest|\[TestCase' # data-driven matrices
-rg -n --pcre2 'expect\(res|\.status\)\.toBe|assert response|assertEquals\(.*response|Assert\.Equal\(.*response' # data-only assertions in UI tests
-rg -n --pcre2 'fetch\(|axios|requests\.(get|post)|RestAssured|HttpClient' # direct API/DB calls in UI tests
-rg -n --pcre2 -B2 'beforeEach|setUp|Background' # UI-driven setup to relocate
+# 3. Find the overuse smells — scope to the UI dirs found in step 1
+rg -n 'test\.each|it\.each|@pytest\.mark\.parametrize|@ParameterizedTest|\[TestCase' tests/e2e # data-driven matrices
+rg -n 'expect\(res|\.status\(\)\)\.toBe|assert response|assertEquals\(.*response|Assert\.Equal\(.*response' tests/e2e # data-only assertions
+rg -n 'fetch\(|axios|requests\.(get|post)|RestAssured|HttpClient' tests/e2e # direct API/DB calls
+rg -n -B2 'beforeEach|setUp|Background' tests/e2e # UI-driven setup to relocate
 ```
+
+Pull runtime and flake data before ranking: Playwright `--reporter=json`,
+JUnit XML from any runner, or CI history (retries, durations). Payoff without
+numbers is a guess — say so in the report when the data isn't available.
 
 Then open each hit and apply the classification rubric in `detection-signals.md`.
 
@@ -90,6 +106,15 @@ Then open each hit and apply the classification rubric in `detection-signals.md`
 - **Don't delete coverage — relocate it.** Every demotion recommendation names the
   API endpoint or unit under test that should now carry it.
 - **Rank by payoff**: slowest/flakiest/most-duplicated UI tests first.
+- **Name a target that exists — or say it doesn't.** If the endpoint/unit that
+  should carry the coverage has no API test harness yet, list it as a
+  prerequisite in the migration plan instead of pretending the move is free.
+- **Parity before removal.** A UI test is retired only after its replacement
+  asserts the same outcome (same inputs, same expected values) and is green in CI.
+- **Use the stack's own API client** for the target test (Playwright `request`
+  fixture, pytest + `requests`/`httpx`, REST Assured, `HttpClient`) — see the
+  per-stack table in `reference.md`; don't introduce a new framework to receive
+  demoted tests.
 - **Language-agnostic**: the same rubric applies whether the suite is TS, Python,
   Java, C#, or Ruby — only the syntax of the markers differs.
 

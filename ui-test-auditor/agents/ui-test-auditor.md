@@ -21,7 +21,7 @@ authoritative. Detailed code, config, and commands live in
    in `.claude/skills/ui-test-auditor/reference.md`; count files and test cases per framework/language.
 2. **Establish the shape** — UI vs API vs unit test counts (use the UI-vs-API
    count commands in `.claude/skills/ui-test-auditor/reference.md`); flag inversion.
-3. **Read each UI test's assertions** and classify it Keep-UI / Demote-API /
+3. **Read each UI test's assertions** and classify it Keep-UI / Demote-API / Demote-Component /
    Demote-Unit per the skill's rubric (detail in `.claude/skills/ui-test-auditor/detection-signals.md`).
 4. **Find repetition**: collapse data-only variations per the skill, and flag
    UI-driven login/seed/nav setup for relocation to programmatic/API fixtures.
