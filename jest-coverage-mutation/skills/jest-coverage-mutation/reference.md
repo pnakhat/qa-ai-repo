@@ -126,7 +126,7 @@ npx stryker run --mutate src/pricing.ts:10-40     # one file / line range while 
 # PR: mutate only files changed vs the base branch (there is no --since flag)
 CHANGED=$(git diff --name-only --diff-filter=AM origin/main...HEAD -- 'src/*.ts' 'src/*.js' \
   | grep -vE '\.(test|spec)\.' | paste -sd, -)
-[ -n "$CHANGED" ] && npx stryker run --incremental --mutate "$CHANGED" || echo "no source changes to mutate"
+if [ -n "$CHANGED" ]; then npx stryker run --incremental --mutate "$CHANGED"; else echo "no source changes to mutate"; fi
 ```
 
 - `coverageAnalysis: "perTest"` (the default) is the fast path — Stryker only
