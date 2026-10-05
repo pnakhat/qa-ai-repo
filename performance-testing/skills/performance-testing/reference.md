@@ -25,7 +25,8 @@ npm i -D @lhci/cli                     # Lighthouse CI runner + assertions (uses
 
 ```
 perf/
-  load.js              # expected-peak load test — the baseline gate
+  load.js              # expected-peak load test — the baseline gate (read-only)
+  checkout-data.js     # write load: setup() pool, run-id tags, teardown()
   stress.js            # ramp past peak to find the knee
   soak.js              # hours at moderate load — leak detection
   spike.js             # sudden surge, then drop
@@ -38,26 +39,30 @@ lighthouserc.json      # frontend budgets + assertions
 ## k6 — load test (the baseline gate)
 
 `perf/load.js`. Ramp to expected peak, hold at steady state, ramp down. Thresholds
-are tied to SLOs and **fail the run** on breach.
+are tied to SLOs and **fail the run** on breach. The journey is read-only, so it
+leaves nothing behind; put write journeys in a script with the data lifecycle
+(*k6 — test data lifecycle* below), or merge that script's `setup()`/`teardown()`
+into this one when the peak mix includes writes.
 
 ```js
 import http from 'k6/http';
+import exec from 'k6/execution';
 import { check, sleep, group } from 'k6';
-import { Trend, Rate, Counter } from 'k6/metrics';
+import { Trend, Rate } from 'k6/metrics';
 
 // --- Config (override at run time: k6 run -e BASE_URL=... -e RATE=20) ---
 const BASE_URL = __ENV.BASE_URL || 'https://staging.example.com';
+const SAFE_HOSTS = (__ENV.PERF_SAFE_HOSTS || 'staging.example.com,localhost').split(',');
 const RATE = Number(__ENV.RATE || 20);   // ITERATIONS (user journeys) per second, not requests
 
 // --- Custom metrics: measure business-meaningful timings/rates, not just HTTP ---
-const checkoutLatency = new Trend('checkout_latency', true); // true = time metric (ms)
-const businessErrors  = new Rate('business_errors');         // logical failures, not just 5xx
-const ordersCreated   = new Counter('orders_created');
+const productLatency = new Trend('product_latency', true); // true = time metric (ms)
+const businessErrors = new Rate('business_errors');        // logical failures, not just 5xx
 
 // VU sizing (Little's Law): VUs needed = arrival rate × iteration duration.
-// One iteration ≈ 2 requests + 5–13 s of think time ≈ 10 s, so 20 it/s needs
-// ~200 VUs. Too few VUs → k6 drops iterations and you silently under-load.
-const VUS = Math.ceil(RATE * 10 * 1.25);
+// One iteration ≈ 2 requests + 3–8 s of think time ≈ 8 s worst case, so 20 it/s
+// needs ~160 VUs. Too few VUs → k6 drops iterations and you silently under-load.
+const VUS = Math.ceil(RATE * 8 * 1.25);
 
 export const options = {
   // Open model: k6 starts iterations at a target ARRIVAL RATE, independent of how
@@ -84,8 +89,8 @@ export const options = {
     'http_req_duration{scenario:peak}': ['p(95)<300', 'p(99)<800'],
     // SLO: error rate < 0.1% at peak
     'http_req_failed{scenario:peak}': ['rate<0.001'],
-    // Custom: checkout path p95 < 500 ms, and <1% business-logic failures
-    'checkout_latency{scenario:peak}': ['p(95)<500'],
+    // Custom: product page p95 < 400 ms, and <1% business-logic failures
+    'product_latency{scenario:peak}': ['p(95)<400'],
     business_errors: ['rate<0.01'],
     // Functional checks must hold under load
     checks: ['rate>0.99'],
@@ -96,31 +101,40 @@ export const options = {
 
 const headers = { Accept: 'application/json' };
 
+export function setup() {
+  // Never load a host that isn't on the perf allowlist (k6 has no global URL).
+  const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];
+  if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to load ${host}: not in PERF_SAFE_HOSTS`);
+}
+
+// Read-only journey: it creates nothing, so there is nothing to tear down. For
+// write load (checkout, sign-up) use the data lifecycle in perf/checkout-data.js.
 export default function () {
+  let skus = [];
   group('browse', () => {
     const res = http.get(`${BASE_URL}/api/products?page=1`, {
       headers,
       tags: { name: 'GET /api/products' },   // one URL bucket, not one per query string
     });
+    skus = (res.json('items') || []).map((i) => i.sku);
     check(res, {
       'browse 200': (r) => r.status === 200,
-      'browse has items': (r) => (r.json('items') || []).length > 0,
+      'browse has items': () => skus.length > 0,
     });
-    sleep(Math.random() * 3 + 2); // think time: 2–5 s, a real user reading the page
+    sleep(Math.random() * 2 + 1); // think time: 1–3 s, a real user reading the page
   });
 
-  group('checkout', () => {
-    const res = http.post(
-      `${BASE_URL}/api/checkout`,
-      JSON.stringify({ sku: 'SKU-001', qty: 1 }),
-      { headers: { ...headers, 'Content-Type': 'application/json' } },
-    );
-    // Record the checkout timing into the custom Trend regardless of pass/fail.
-    checkoutLatency.add(res.timings.duration);
-    const ok = check(res, { 'checkout 201': (r) => r.status === 201 });
+  group('product', () => {
+    const sku = skus[Math.floor(Math.random() * skus.length)] || 'SKU-001'; // vary keys
+    const res = http.get(`${BASE_URL}/api/products/${sku}`, {
+      headers,
+      tags: { name: 'GET /api/products/:sku' },
+    });
+    // Record the product timing into the custom Trend regardless of pass/fail.
+    productLatency.add(res.timings.duration);
+    const ok = check(res, { 'product 200 with price': (r) => r.status === 200 && r.json('price') != null });
     businessErrors.add(!ok);           // logical failure rate, independent of HTTP
-    if (ok) ordersCreated.add(1);
-    sleep(Math.random() * 5 + 3);      // think time: 3–8 s
+    sleep(Math.random() * 3 + 2);      // think time: 2–5 s
   });
 }
 ```
@@ -131,8 +145,11 @@ Notes:
   latency numbers from that run are not valid for the target rate.
 - Tag dynamic URLs (`tags: { name: ... }`) or every `/orders/123` becomes its own
   metric series and thresholds/summary become unreadable.
-- Use per-VU unique test data (`SharedArray` from a CSV/JSON of accounts and
-  SKUs) so you exercise the working set, not one cached row.
+- Vary the keys across the working set (here: a random SKU from the listing;
+  for accounts, the per-VU pool in the data-lifecycle script) so you exercise
+  the working set, not one cached row.
+- `setup()` refuses any host not in `PERF_SAFE_HOSTS`. Every script below
+  carries the same guard.
 
 Run it:
 
@@ -161,10 +178,11 @@ import exec from 'k6/execution';
 import { check, sleep } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'https://perf.example.com';
-const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;          // CI: the pipeline run id
-const PREFIX = `perf-${RUN_ID}`;
-const MAX_VUS = 200;
 const SAFE_HOSTS = (__ENV.PERF_SAFE_HOSTS || 'perf.example.com,localhost').split(',');
+const RATE = Number(__ENV.RATE || 20);
+// VUs = rate × iteration time: 1 request + 3–8 s think time ≈ 8.5 s worst case.
+// All VUs are allocated up front (pre = max) so none are started, or dropped, mid-run.
+const POOL = Math.ceil(RATE * 8.5 * 1.25);              // one account per VU
 const ADMIN = {
   headers: { Authorization: `Bearer ${__ENV.ADMIN_TOKEN}`, 'Content-Type': 'application/json' },
 };
@@ -174,32 +192,44 @@ export const options = {
   scenarios: {
     peak: {
       executor: 'constant-arrival-rate',
-      rate: 20, timeUnit: '1s', duration: '5m',
-      preAllocatedVUs: 100, maxVUs: MAX_VUS,
+      rate: RATE, timeUnit: '1s', duration: '5m',
+      preAllocatedVUs: POOL, maxVUs: POOL,
     },
   },
   // Scoped to the load scenario: setup()/teardown() requests don't count toward the SLO.
-  thresholds: { 'http_req_duration{scenario:peak}': ['p(95)<300'] },
+  thresholds: {
+    'http_req_duration{scenario:peak}': ['p(95)<300'],
+    'checks{scenario:peak}': ['rate>0.99'],
+    dropped_iterations: ['count<1'],                     // under-delivered load is not a valid run
+  },
 };
 
 export function setup() {
   const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];   // k6 has no global URL
   if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to provision data on ${host}`);
 
-  // One account per possible VU, so no two VUs mutate the same cart.
+  // Init code runs once per VU, so a Date.now() fallback there gives every VU its own
+  // prefix. Build it once here and hand it to the VUs and teardown() through `data`.
+  const prefix = `perf-${__ENV.RUN_ID || Date.now()}`;  // CI: the pipeline run id
+
+  // One account per VU, so no two VUs mutate the same cart.
   const accounts = [];
-  for (let i = 1; i <= MAX_VUS; i++) {
+  for (let i = 1; i <= POOL; i++) {
     const res = http.post(`${BASE_URL}/api/test-accounts`,
-      JSON.stringify({ email: `${PREFIX}-u${i}@example.test` }), ADMIN);
-    if (res.status !== 201) exec.test.abort(`pool provisioning failed: ${res.status}`);
+      JSON.stringify({ email: `${prefix}-u${i}@example.test` }), ADMIN);
+    if (res.status !== 201) {
+      // teardown() doesn't run when setup() aborts: remove the partial pool first.
+      deleteAccounts(accounts);
+      exec.test.abort(`pool provisioning failed at ${i}/${POOL}: ${res.status}`);
+    }
     accounts.push({ id: res.json('id'), token: res.json('token') });
   }
-  return { accounts };                                   // passed to default() and teardown()
+  return { prefix, accounts };                           // passed to default() and teardown()
 }
 
 export default function (data) {
   const account = data.accounts[exec.vu.idInTest - 1];
-  const ref = `${PREFIX}-v${exec.vu.idInTest}-i${exec.scenario.iterationInTest}`;
+  const ref = `${data.prefix}-v${exec.vu.idInTest}-i${exec.scenario.iterationInTest}`;
   const res = http.post(`${BASE_URL}/api/checkout`,
     JSON.stringify({ sku: 'SKU-001', qty: 1, clientRef: ref }),   // tagged with the run id
     { headers: { Authorization: `Bearer ${account.token}`, 'Content-Type': 'application/json' },
@@ -211,9 +241,27 @@ export default function (data) {
 export function teardown(data) {
   // Orders created by VUs never reach teardown (VUs share no memory), so delete them
   // by the run tag; then delete the pool setup() created. Nothing else is touched.
-  const orders = http.del(`${BASE_URL}/api/test-data/orders?clientRefPrefix=${PREFIX}`, null, ADMIN);
-  check(orders, { 'run orders deleted': (r) => r.status === 204 });
-  for (const a of data.accounts) http.del(`${BASE_URL}/api/test-accounts/${a.id}`, null, ADMIN);
+  const q = `clientRefPrefix=${data.prefix}-`;
+  const del = http.del(`${BASE_URL}/api/test-data/orders?${q}`, null, ADMIN);
+  const left = http.get(`${BASE_URL}/api/test-data/orders/count?${q}`, ADMIN);
+  const failedAccounts = deleteAccounts(data.accounts);
+  // A 2xx alone proves nothing (deleting 0 rows succeeds too): require that the run's
+  // orders were found and that none remain. exec.test.fail() fails the run (exit 110).
+  const clean = check(null, {
+    'run orders deleted': () => del.status === 200 && del.json('deleted') > 0,
+    'no run orders left': () => left.status === 200 && left.json('count') === 0,
+    'pool deleted': () => failedAccounts === 0,
+  });
+  if (!clean) exec.test.fail(`cleanup incomplete for ${data.prefix}: deleted=${del.body} left=${left.body} accountsLeft=${failedAccounts}`);
+}
+
+function deleteAccounts(accounts) {
+  let failed = 0;
+  for (const a of accounts) {
+    const r = http.del(`${BASE_URL}/api/test-accounts/${a.id}`, null, ADMIN);
+    if (r.status !== 204 && r.status !== 404) failed++;  // attempt every delete, count failures
+  }
+  return failed;
 }
 ```
 
@@ -224,12 +272,23 @@ export function teardown(data) {
   creates them once (idempotent on email), writes `accounts.csv`, and the test
   reads it with `SharedArray`. The accounts stay; the script resets their state and
   `teardown()` still deletes the run's writes.
-- **Sweeper** (scheduled, catches killed runs):
+- **`RUN_ID` in init code is a trap**: k6 runs init code once per VU and again
+  for `setup()` and `teardown()`, so `__ENV.RUN_ID || Date.now()` there gives
+  each VU its own prefix and teardown deletes nothing. Build the prefix in
+  `setup()` and pass it through `data`, as above.
+- **Teardown verifies, not just deletes**: a bulk delete returns success for 0
+  rows, so assert the deleted count and that a count by prefix is 0, and fail
+  the run (`exec.test.fail()`, exit 110) when it isn't.
+- **Sweeper** (scheduled, catches killed runs and aborted setups), accounts as
+  well as orders:
   ```sql
-  DELETE FROM orders WHERE client_ref LIKE 'perf-%' AND created_at < now() - interval '12 hours';
+  DELETE FROM orders   WHERE client_ref LIKE 'perf-%' AND created_at < now() - interval '12 hours';
+  DELETE FROM accounts WHERE email      LIKE 'perf-%' AND created_at < now() - interval '12 hours';
   ```
-- **Check it**: run twice back to back with the same `RUN_ID` scheme and compare
-  p95; then `SELECT count(*) FROM orders WHERE client_ref LIKE 'perf-<run>-%'` → 0.
+- **Check it**: run twice back to back, once without `RUN_ID` and once with a
+  failing threshold, and compare p95; after each,
+  `SELECT count(*) FROM orders WHERE client_ref LIKE 'perf-%'` and the same on
+  accounts → 0.
 
 ---
 
@@ -240,9 +299,11 @@ so you learn the capacity ceiling and *how* it fails (graceful slope vs cliff).
 
 ```js
 import http from 'k6/http';
+import exec from 'k6/execution';
 import { check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'https://staging.example.com';
+const SAFE_HOSTS = (__ENV.PERF_SAFE_HOSTS || 'staging.example.com,localhost').split(',');
 
 export const options = {
   scenarios: {
@@ -275,6 +336,11 @@ export const options = {
   },
 };
 
+export function setup() {
+  const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];
+  if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to load ${host}: not in PERF_SAFE_HOSTS`);
+}
+
 export default function () {
   const res = http.get(`${BASE_URL}/api/products`);
   check(res, { 'status 2xx/3xx': (r) => r.status < 400 });
@@ -297,10 +363,12 @@ upward drift over time means a leak (memory, connections, file descriptors, cach
 
 ```js
 import http from 'k6/http';
+import exec from 'k6/execution';
 import { check } from 'k6';
 import { Trend } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'https://staging.example.com';
+const SAFE_HOSTS = (__ENV.PERF_SAFE_HOSTS || 'staging.example.com,localhost').split(',');
 const latency = new Trend('req_latency', true);
 
 export const options = {
@@ -326,6 +394,11 @@ export const options = {
   },
 };
 
+export function setup() {
+  const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];
+  if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to load ${host}: not in PERF_SAFE_HOSTS`);
+}
+
 export default function () {
   const res = http.get(`${BASE_URL}/api/products`);
   latency.add(res.timings.duration);
@@ -350,9 +423,11 @@ does the system **recover** once the spike passes?
 
 ```js
 import http from 'k6/http';
+import exec from 'k6/execution';
 import { check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'https://staging.example.com';
+const SAFE_HOSTS = (__ENV.PERF_SAFE_HOSTS || 'staging.example.com,localhost').split(',');
 
 export const options = {
   scenarios: {
@@ -373,6 +448,11 @@ export const options = {
     http_req_failed: ['rate<0.02'],        // shed load gracefully (429/503 + Retry-After), not 500s
   },
 };
+
+export function setup() {
+  const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];
+  if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to load ${host}: not in PERF_SAFE_HOSTS`);
+}
 
 export default function () {
   const res = http.get(`${BASE_URL}/api/products`, { tags: { name: 'GET /api/products' } });

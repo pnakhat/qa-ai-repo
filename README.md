@@ -166,9 +166,19 @@ in one project instead of installed as a plugin.
    for browsers. For Playwright's built-in planner, generator, and healer agents,
    also run `npx playwright init-agents --loop=claude`, and re-run it after
    upgrading Playwright. `init-agents` overwrites `.mcp.json` with only
-   `playwright-test`, so re-run `npx qa-ai-repo add playwright-e2e` afterwards
-   (idempotent) to restore the `playwright` server, or back the file up and merge
-   it back. Plugin installs are unaffected: their servers come from the plugin.
+   `playwright-test`, so back the file up first and merge its entries back
+   afterwards; the commands are under *Playwright test agents* in
+   [`reference.md`](playwright-e2e/skills/playwright-e2e/reference.md). If you
+   re-add the objective instead, use the version you installed
+   (`npx qa-ai-repo@<version> add playwright-e2e`); a bare `npx qa-ai-repo` fetches
+   the latest published release, which may be older.
+   **Plugin installs:** the plugin's tools are named
+   `mcp__plugin_playwright-e2e_playwright-test__*`, but the agent files
+   `init-agents` writes expect `mcp__playwright-test__*`. Approve the
+   `playwright-test` server in the `.mcp.json` that `init-agents` writes; Claude
+   Code then uses it in place of the plugin's identical server and the built-in
+   agents get their tools. `claude mcp list` should show `playwright-test`
+   connected and no `plugin:playwright-e2e:playwright-test`.
 6. **Update or uninstall:** re-run `add` to update. To uninstall, delete the files
    listed in step 1 and remove the objective's entries from `mcpServers` in
    `.mcp.json`.

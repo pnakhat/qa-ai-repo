@@ -131,10 +131,12 @@ Fix the cause the taxonomy named. Recipes with before/after code in `reference.m
 
 Leaked test data is the most common *Shared state & ordering* flake: a test that
 reads a record another test created, a unique-key collision between workers, a
-row a crashed run left behind. The fix is the test-data rule in the suite's own
-skill (`playwright-e2e`, `playwright-bdd`, `jest-coverage-mutation`,
-`performance-testing`, `api-contract-testing` each carry a *Test data: setup and
-teardown* section). When triaging, check for:
+row a crashed run left behind. The fix: each test creates its own uniquely named
+data and deletes it in teardown that also runs when the test fails. If the
+suite's objective is installed, its skill has the framework details: *Test data:
+setup and teardown* in `playwright-e2e`, `playwright-bdd`, `performance-testing`
+and `api-contract-testing`, and *Test isolation: setup and teardown* in
+`jest-coverage-mutation`. When triaging, check for:
 
 - **Order dependence on data**: green alone, red in the suite (or the reverse) →
   the test consumes or collides with another test's records. Each test must

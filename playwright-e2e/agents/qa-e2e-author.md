@@ -31,15 +31,23 @@ don't copy them. If the `playwright-test-planner` definition is missing, run
 `opencode` `.opencode/prompts/`. A tool with no loop of its own (Cursor, Windsurf) can
 use `--loop=vscode` just to get the playbooks. Re-run after upgrading Playwright.
 
-**Protect the MCP config first.** `init-agents --loop=claude` overwrites `.mcp.json`
-with only `playwright-test`, dropping every other server, including the `playwright`
-server this objective installed (other loops write their own config file, such as
-`.vscode/mcp.json` or `opencode.json`; treat it the same way). Copy the file before
-running it (`cp .mcp.json .mcp.json.bak`). Afterwards, merge back any server it
-dropped, or re-run `npx qa-ai-repo add playwright-e2e` (idempotent: it restores this
-objective's servers and keeps `playwright-test`). Then check that both `playwright`
-and `playwright-test` are present. When the objective is installed as a Claude Code
-plugin, its servers come from the plugin rather than `.mcp.json`, so they are unaffected.
+**Protect the MCP config first.** `init-agents` overwrites the loop's MCP config
+(`.mcp.json` for `claude`) with only `playwright-test`, dropping every other server,
+including this objective's `playwright` server. Back the file up before running it
+and merge the old entries back afterwards, using the commands under *Playwright test
+agents* in the `reference.md` file in the `playwright-e2e` skill's directory; then
+check that both `playwright` and `playwright-test` are present. Don't restore by
+running a bare `npx qa-ai-repo add`: it fetches whatever npm has published, which can
+be older than the installed objective. If you must re-add, use the installed version
+(`npx qa-ai-repo@<version> add playwright-e2e`).
+
+**Plugin installs.** The plugin's tools are named `mcp__plugin_playwright-e2e_playwright-test__*`,
+but the built-in agent files list `mcp__playwright-test__*`. They match only once the
+`playwright-test` server from the `.mcp.json` that `init-agents` writes is approved:
+Claude Code then uses it in place of the plugin's identical server. Check with
+`claude mcp list` (`playwright-test` connected, no `plugin:playwright-e2e:playwright-test`);
+if it isn't approved, ask the user to approve it, or run the phases inline with the
+plugin's tool names.
 
 **How to use them depends on what you can launch:**
 - **The Agent tool lists `playwright-test-planner` / `-generator` / `-healer` as launchable
@@ -47,7 +55,8 @@ plugin, its servers come from the plugin rather than `.mcp.json`, so they are un
   (independent scenarios can run in parallel). Unless the caller told you to run inline.
 - **Otherwise** (no Agent tool, or those types aren't offered): run the phase yourself.
   Read that agent's definition file (where `init-agents` wrote it, above) as the playbook and call the
-  same `mcp__playwright-test__*` tools it lists (load them via ToolSearch if deferred).
+  same tools it lists: `mcp__playwright-test__*`, or `mcp__plugin_playwright-e2e_playwright-test__*`
+  under a plugin install without the project server (load them via ToolSearch if deferred).
 
 Their output is a draft. The generator writes raw `page.*` calls and the healer may mark
 a test `test.fixme()`; this skill's rules still decide what ships.

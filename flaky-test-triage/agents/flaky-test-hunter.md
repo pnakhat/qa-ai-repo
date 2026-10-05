@@ -22,6 +22,8 @@ the `reference.md` file in the `flaky-test-triage` skill's directory; Read it wh
 2. **Reproduce the non-determinism.** Rerun the suspect many times and vary the axis
    the symptoms suggest (repeat loops, alone-vs-suite, serial-vs-parallel,
    `TZ`/locale/seed) using the skill's detection commands, until it flips on demand.
+   Write any repro script or loop harness inside the project (e.g. `scripts/flake/`
+   or a gitignored `tmp/`), never outside the working directory.
 3. **Quantify.** Compute the per-test flake score and note the blast radius (blocks
    trunk? critical path?), using the formulas in
    the `reference.md` file in the `flaky-test-triage` skill's directory.

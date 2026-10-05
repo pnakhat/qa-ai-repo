@@ -35,6 +35,12 @@ global.setup.ts     # the 'setup' project: logs in once, writes storage states
 
 ```ts
 import { defineConfig, devices } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+
+// One id for the whole run, used to prefix test data. The config is evaluated in
+// the runner before any worker starts and workers inherit its env, so all workers
+// share this id. CI can set TEST_RUN_ID (e.g. the pipeline run id) to override it.
+process.env.TEST_RUN_ID ??= randomUUID().slice(0, 8);
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -217,8 +223,10 @@ creates the data, hands it to the test, and deletes it afterwards — the code a
 import { test as base, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
-// One id per run (set TEST_RUN_ID in CI so the sweeper can find a crashed run's data).
-const RUN_ID = process.env.TEST_RUN_ID ?? randomUUID().slice(0, 8);
+// One id per run, set in playwright.config.ts. Don't generate it here: this module
+// loads once per worker, so a fallback would give every worker its own prefix.
+const RUN_ID = process.env.TEST_RUN_ID;
+if (!RUN_ID) throw new Error('TEST_RUN_ID is not set: assign it in playwright.config.ts');
 
 // Destructive setup/teardown only against allowlisted hosts — never prod or shared envs.
 const SAFE_HOSTS = (process.env.E2E_SAFE_HOSTS ?? 'localhost,127.0.0.1').split(',');
@@ -240,14 +248,19 @@ export const test = base.extend<DataFixtures>({
   },
 
   // Deletes every tracked resource, newest first, even when the test failed.
+  // Attempts every delete, then reports all failures at once, so one failed
+  // delete doesn't leave the rest behind.
   track: async ({ request, baseURL }, use) => {
     assertSafeTarget(baseURL);
     const created: string[] = [];
     await use((url) => { created.push(url); });
+    const failures: string[] = [];
     for (const url of created.reverse()) {
-      const res = await request.delete(url);
-      expect([200, 204, 404]).toContain(res.status());   // 404: the test already deleted it
+      const res = await request.delete(url).catch((e: Error) => e);
+      const status = res instanceof Error ? res.message : res.status();
+      if (![200, 204, 404].includes(status as number)) failures.push(`${url}: ${status}`); // 404: already gone
     }
+    expect(failures, 'test-data teardown failed').toEqual([]);
   },
 
   customer: async ({ request, uid, track }, use) => {
@@ -298,7 +311,9 @@ Notes:
   npx playwright test --fully-parallel --workers=4     # no collisions between workers
   npx playwright test -g "displays a previously placed order"   # passes alone
   ```
-  Then query for the run's prefix (`e2e-$TEST_RUN_ID-`): zero rows left.
+  Then query for the run's prefix (`e2e-<run id>-`): zero rows left. Set
+  `TEST_RUN_ID` yourself to know the prefix; otherwise read it from any created
+  row, since every worker shares the config's id.
 
 ## Locator chaining & filtering
 
@@ -395,16 +410,40 @@ Playwright ≥ 1.56 ships planner, generator, and healer agent definitions that 
 the `playwright-test` MCP server (`npx playwright run-test-mcp-server`, also
 installed by this objective).
 
+`init-agents --loop=claude` replaces `.mcp.json` with only `playwright-test`,
+dropping every other server (other loops do the same to their own file, such as
+`.vscode/mcp.json` or `opencode.json`). Back the file up and merge the old
+entries back afterwards. This needs no network and no particular qa-ai-repo
+version:
+
 ```bash
-cp .mcp.json .mcp.json.bak                 # init-agents overwrites .mcp.json
+[ -f .mcp.json ] && cp .mcp.json .mcp.json.bak
 npx playwright init-agents --loop=claude   # writes .claude/agents/playwright-test-*.md + .mcp.json
-npx qa-ai-repo add playwright-e2e          # idempotent: restores the "playwright" server it dropped
-npx playwright init-agents --loop=vscode   # or codex / opencode; re-run after upgrading Playwright
+node -e "const fs=require('fs');if(!fs.existsSync('.mcp.json.bak'))process.exit(0);
+const old=JSON.parse(fs.readFileSync('.mcp.json.bak'));const cur=JSON.parse(fs.readFileSync('.mcp.json'));
+cur.mcpServers={...old.mcpServers,...cur.mcpServers};fs.writeFileSync('.mcp.json',JSON.stringify(cur,null,2)+'\n')"
+rm -f .mcp.json.bak
+node -e "console.log(Object.keys(require('./.mcp.json').mcpServers))"   # expect playwright-test + playwright
+# Other tools: npx playwright init-agents --loop=vscode (or codex / opencode).
+# Re-run after upgrading Playwright.
 ```
 
-`init-agents` replaces the loop's MCP config with only `playwright-test`. Merge
-back anything else it dropped from the backup. Plugin installs get their servers
-from the plugin, so they are unaffected.
+If you re-add the objective instead, use the version you installed
+(`npx qa-ai-repo@<version> add playwright-e2e`): a bare `npx qa-ai-repo` fetches
+whatever npm has published, which can be older than your install.
+
+**Plugin installs (Claude Code).** The plugin's servers are namespaced: its
+tools are `mcp__plugin_playwright-e2e_playwright-test__*`, while the agent files
+`init-agents` writes list `mcp__playwright-test__*` in their `tools:`. The
+`.mcp.json` that `init-agents` writes defines a `playwright-test` server with
+the same command; once you approve it (start `claude` and accept the project
+server, or list it in `enabledMcpjsonServers`), Claude Code uses it instead of
+the plugin's duplicate, the tools are exposed as `mcp__playwright-test__*`, and
+the built-in agents get their tools. Check with `claude mcp list`: it should show
+`playwright-test` (connected) and `plugin:playwright-e2e:playwright`, with no
+`plugin:playwright-e2e:playwright-test`. Until that server is approved, the
+built-in agents have no MCP tools: run their phases inline with the plugin's
+tool names instead of delegating.
 
 - **Seed** (`tests/seed.spec.ts`): the test every generated test starts from. Import
   the project's fixtures in it so auth state and page objects carry through.

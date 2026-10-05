@@ -107,8 +107,12 @@ skew the next run's baseline. Code in `reference.md` → *k6 — test data lifec
 - **Provision the data pool before load starts**, never inside the measured
   window and never through the UI: a seed script (pool read from CSV via
   `SharedArray`) or k6 `setup()` creating accounts/products through the API.
-  Size it to the working set and to `maxVUs`, so no two VUs share an account
-  unless contention *is* the scenario.
+  Size it to the working set and to `maxVUs`, and index it by `exec.vu.idInTest`
+  (one account per VU), never by `iteration % poolSize`, so no two VUs share an
+  account unless contention *is* the scenario.
+- **Build the run id once, in `setup()`**, and pass it to VUs and `teardown()`
+  through `data`. Init code runs once per VU, so a `Date.now()` fallback there
+  gives each VU its own prefix and teardown matches nothing.
 - **Unique per VU and iteration**: tag every record a VU creates with the run id
   plus `exec.vu.idInTest` / `exec.scenario.iterationInTest` (`perf-<run>-v12-i340`),
   so concurrent runs and repeats never collide.
@@ -117,12 +121,20 @@ skew the next run's baseline. Code in `reference.md` → *k6 — test data lifec
   ids created during load can't reach it: delete by the run-id tag (bulk
   endpoint or SQL scoped to the prefix), then the pool `setup()` returned. Never
   truncate tables in a shared environment.
+- **Teardown verifies its own work**: a delete that matched 0 rows still
+  returns 2xx. Assert the deleted count and that a count by the run prefix is 0,
+  and fail the run (`exec.test.fail()`) when it isn't.
+- **`setup()` cleans up after itself on failure**: k6 skips `teardown()` when
+  `setup()` aborts, so delete what was already provisioned before calling
+  `exec.test.abort()`.
 - **Prefer isolation that needs no cleanup**: a dedicated perf environment
   restored from a snapshot before each run, or an ephemeral stack torn down after.
 - **Idempotent provisioning** (re-running the seed script reuses the pool) and an
-  age-based **sweeper** for runs killed before `teardown()`.
-- **Guard by environment**: `setup()` aborts (`exec.test.abort()`) unless
-  `BASE_URL` is on the perf allowlist — the data rules add to the "never load
+  age-based **sweeper** for runs killed before `teardown()`, covering every
+  kind of record the run creates (accounts as well as orders).
+- **Guard by environment**: every script, read-only or not, has a `setup()` that
+  aborts (`exec.test.abort()`) unless the `BASE_URL` host is on the perf
+  allowlist (`PERF_SAFE_HOSTS`). The data rules add to the "never load
   production" rule, they don't relax it.
 - **Prove it**: two back-to-back runs give comparable numbers (a second run
   that's slower because the first left data behind is a teardown bug), and after
@@ -249,6 +261,9 @@ Note the mean here might be ~70 ms and would have hidden that 1-in-100 users wai
 | Load-testing production or a third-party API unannounced | Prod-like env with sign-off; stub/sandbox third parties |
 | Running the full soak on every commit | Perf is its own layer — smoke per-commit, load/soak nightly or pre-release |
 | Every VU logs in as the same seed user and mutates its cart | Provisioned pool, one account per VU (`exec.vu.idInTest`) |
+| A 20-account pool shared by `iterationInTest % 20` across 200 VUs | Pool sized to `maxVUs`, indexed by `exec.vu.idInTest` |
+| Script with no host guard, one wrong `BASE_URL` from loading prod | `setup()` aborts unless the host is in `PERF_SAFE_HOSTS` |
+| `teardown()` that checks only for a 2xx from the bulk delete | Assert the deleted count and zero rows left with the run prefix |
 | Records created during load left in place, next run is slower | `teardown()` deletes by the run-id tag; compare back-to-back runs |
 | Cleanup script run by hand "after the test", skipped when it fails | `teardown()` in the script + an age-based sweeper |
 | Relying on an environment reset that the pipeline never runs | Snapshot restore or ephemeral stack as a pipeline step |

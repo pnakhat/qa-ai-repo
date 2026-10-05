@@ -32,6 +32,7 @@ playwright.config.ts
 ```ts
 import { defineConfig } from '@playwright/test';
 import { defineBddConfig, cucumberReporter } from 'playwright-bdd';
+import { randomUUID } from 'node:crypto';
 
 const testDir = defineBddConfig({
   features: 'features/**/*.feature',
@@ -39,6 +40,11 @@ const testDir = defineBddConfig({
   missingSteps: 'fail-on-gen',   // default; undefined steps fail bddgen
   // tags: '@smoke',             // optional: bake a tag filter into generation
 });
+
+// One id for the whole run, used to prefix test data. The config is evaluated in
+// the runner before any worker starts and workers inherit its env, so all workers
+// share this id. CI can set TEST_RUN_ID (e.g. the pipeline run id) to override it.
+process.env.TEST_RUN_ID ??= randomUUID().slice(0, 8);
 
 export default defineConfig({
   testDir,
@@ -166,7 +172,10 @@ import { test as base, createBdd } from 'playwright-bdd';
 import { expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
-const RUN_ID = process.env.TEST_RUN_ID ?? randomUUID().slice(0, 8);
+// One id per run, set in playwright.config.ts. Don't generate it here: this module
+// loads once per worker, so a fallback would give every worker its own prefix.
+const RUN_ID = process.env.TEST_RUN_ID;
+if (!RUN_ID) throw new Error('TEST_RUN_ID is not set: assign it in playwright.config.ts');
 const SAFE_HOSTS = (process.env.E2E_SAFE_HOSTS ?? 'localhost,127.0.0.1').split(',');
 
 type Customer = { id: string; email: string };
@@ -214,7 +223,8 @@ and `After(async ({ seed }) => { ... })` — hooks receive fixtures, so the ids
 still come from the scenario's fixture, never a module-level array.
 
 Check it: `npx bddgen && npx playwright test --repeat-each=2 --fully-parallel`,
-then confirm nothing with the `bdd-$TEST_RUN_ID-` prefix is left.
+then confirm nothing with the run's `bdd-<run id>-` prefix is left (all workers
+share the id the config set; set `TEST_RUN_ID` yourself to know it up front).
 
 ## Data tables — many values of one kind in one step
 
