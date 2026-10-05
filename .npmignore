@@ -13,3 +13,7 @@ node_modules/
 /.claude/
 /.cursor/
 /.windsurf/
+
+# Repo-only tests and generator
+/test/
+/scripts/
