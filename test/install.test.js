@@ -178,6 +178,9 @@ test('non-Claude installs carry no Claude-only wording and no dead sibling links
     const text = readFileSync(f, 'utf8');
     assert.ok(!text.includes('(preloaded)'), `${f} says the skill is preloaded`);
     assert.ok(!text.includes('SKILL.md'), `${f} points at SKILL.md, which is not installed here`);
+    for (const w of ['claude mcp', 'claude plugin', 'mcp__plugin_', 'enabledMcpjsonServers', 'claude-code-only']) {
+      assert.ok(!text.includes(w), `${f} carries Claude Code-only wording: ${w}`);
+    }
     // Bare `x.md` in a sibling file resolves next to it. ALL-CAPS names are
     // reports the agents write (UI-TEST-AUDIT.md), not shipped files.
     if (dirname(f) === join(cwd, '.cursor', 'rules') || dirname(f) === join(cwd, '.windsurf', 'rules') || f.endsWith('AGENTS.md')) continue;
@@ -189,4 +192,10 @@ test('non-Claude installs carry no Claude-only wording and no dead sibling links
   assert.match(cursorAgent, /`playwright-e2e` skill \(included below\)/);
   const agentsMd = readFileSync(join(cwd, 'AGENTS.md'), 'utf8');
   assert.match(agentsMd, /`playwright-e2e` skill \(its own section in this file\)/);
+
+  // Claude Code installs keep the Claude-only blocks.
+  install(loadObjective('playwright-e2e'), ['claude'], { cwd, log() {} });
+  for (const f of [join(cwd, '.claude', 'agents', 'qa-e2e-author.md'), join(cwd, '.claude', 'skills', 'playwright-e2e', 'reference.md')]) {
+    assert.match(readFileSync(f, 'utf8'), /claude mcp list/, `${f} lost its Claude Code-only block`);
+  }
 });

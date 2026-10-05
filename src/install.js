@@ -114,6 +114,12 @@ function rewriteSiblingLinks(text, skillName, siblings) {
   return out;
 }
 
+// Text wrapped in <!-- claude-code-only --> ... <!-- /claude-code-only --> only
+// applies to Claude Code (plugin tool names, `claude mcp list`, settings keys).
+// The Claude adapter copies it verbatim; every other adapter drops the block.
+const CLAUDE_ONLY = /<!-- claude-code-only -->[\s\S]*?<!-- \/claude-code-only -->\n*/g;
+const stripClaudeOnly = (text) => (text || '').replace(CLAUDE_ONLY, '');
+
 // Agents name skill files location-neutrally ("the `x.md` file in the `<skill>`
 // skill's directory") because Claude Code resolves that from the preloaded
 // skill's base directory, both for .claude/skills/ and for a plugin cache.
@@ -125,7 +131,7 @@ function readAgent(objective, agentFile, skillsPrefix, skillWhere) {
   const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
   return {
     data,
-    body: body
+    body: stripClaudeOnly(body)
       .replace(SKILL_FILE_REF, (_, file, skill) => `\`${skillsPrefix}${skill}/${file}\``)
       .replace(/ skill \(preloaded\)/g, ` skill (${skillWhere})`),
   };
@@ -159,7 +165,7 @@ function copySiblings(ctx, objective, skillName, destDir) {
     const src = join(dir, f);
     const dest = join(destDir, skillName, f);
     if (statSync(src).isDirectory()) copyDir(ctx, src, dest);
-    else ensureWrite(ctx, dest, readFileSync(src, 'utf8'));
+    else ensureWrite(ctx, dest, /\.mdc?$/.test(f) ? stripClaudeOnly(readFileSync(src, 'utf8')) : readFileSync(src, 'utf8'));
   }
 }
 
@@ -171,7 +177,7 @@ function readSkill(objective, skillName) {
   const raw = existsSync(skillMd) ? readFileSync(skillMd, 'utf8') : '';
   const { data, body } = parseFrontmatter(raw);
   const siblings = skillSiblings(objective, skillName);
-  return { skillMd, raw, siblings, data, body };
+  return { skillMd, raw, siblings, data, body: stripClaudeOnly(body) };
 }
 
 const adapters = {

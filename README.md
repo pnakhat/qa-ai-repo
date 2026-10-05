@@ -119,10 +119,14 @@ repo's marketplace (`.claude-plugin/marketplace.json`).
    ```
 
 2. **Verify** (run `/reload-plugins` or restart `claude` first):
-   - `/agents` lists `playwright-e2e:qa-e2e-author`.
+   - `claude plugin details playwright-e2e` prints the component inventory: the
+     `qa-e2e-author` agent, the `playwright-e2e` skill, and the MCP servers.
+   - `/plugin` → Installed lists `playwright-e2e`.
+   - Ask Claude "which subagents are available?"; the answer includes
+     `playwright-e2e:qa-e2e-author`. (The `/agents` wizard has been removed from
+     Claude Code, so it no longer lists them.)
    - `/mcp` shows the plugin's servers (`playwright-test`, `playwright`) as connected.
    - `/playwright-e2e:playwright-e2e` (or just `/playwright-e2e`) runs the skill.
-   - `claude plugin details playwright-e2e` prints the full component inventory.
 3. **Use it:** "Use the qa-e2e-author agent to cover the checkout flow". The
    objective-specific extras in the npx steps below (browsers, `init-agents`)
    apply here too.
@@ -156,7 +160,8 @@ in one project instead of installed as a plugin.
    servers when prompted. Until you approve them, `claude mcp list` shows them as
    `Pending approval`.
 3. **Verify:**
-   - `/agents` lists `qa-e2e-author`.
+   - `ls .claude/agents/` shows `qa-e2e-author.md`, and asking Claude "which
+     subagents are available?" names `qa-e2e-author`.
    - `/mcp` or `claude mcp list` shows the servers as connected.
    - `playwright-e2e` appears among the available skills.
 4. **Use it:**
@@ -177,8 +182,14 @@ in one project instead of installed as a plugin.
    `init-agents` writes expect `mcp__playwright-test__*`. Approve the
    `playwright-test` server in the `.mcp.json` that `init-agents` writes; Claude
    Code then uses it in place of the plugin's identical server and the built-in
-   agents get their tools. `claude mcp list` should show `playwright-test`
-   connected and no `plugin:playwright-e2e:playwright-test`.
+   agents get their tools. Approval needs a trusted folder: until you accept the
+   folder's trust dialog, project servers stay `Pending approval`, even when
+   listed in `enabledMcpjsonServers`. So start `claude` in the project, trust the
+   folder, then approve the server. `claude mcp list` should then show
+   `playwright-test` connected and no `plugin:playwright-e2e:playwright-test`.
+   The identical `playwright` server appears only once: as
+   `plugin:playwright-e2e:playwright`, or under accessibility-testing's name
+   (`plugin:accessibility-testing:playwright`) when that plugin is also installed.
 6. **Update or uninstall:** re-run `add` to update. To uninstall, delete the files
    listed in step 1 and remove the objective's entries from `mcpServers` in
    `.mcp.json`.
