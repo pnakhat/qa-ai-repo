@@ -1,7 +1,7 @@
 {
   "name": "qa-strategy",
   "displayName": "QA Strategy",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Pre-fill what the codebase shows, then ask only the decision-relevant intake questions (product, stack, team size, release cadence) as multiple-choice option sets, then generate a tailored, risk-based QA strategy with an automation plan, quality gates, tooling, and a phased rollout. Scores features by likelihood × impact to focus coverage where it matters, and defines metrics (escape rate, DORA lead time / change fail rate / recovery time, flake rate, mutation score) with precise formulas and enforcing CI gates. Enforces guardrails against invented inputs, big-bang rewrites, one-size-fits-all strategies, testing theater, and vanity metrics with no gate — every recommendation must trace to a stated intake input and land as a measurable gate.",
   "author": {
     "name": "pnakhat"
