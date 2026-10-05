@@ -203,8 +203,16 @@ export const test = base.extend<{ seed: Seed; ctx: Ctx }>({
       },
     });
 
-    // Teardown: runs after the last step, pass or fail. Newest first.
-    for (const url of created.reverse()) await request.delete(url);
+    // Teardown: runs after the last step, pass or fail. Newest first. Attempts every
+    // delete, then reports all failures at once, so one failed delete doesn't leave
+    // the rest behind or pass silently.
+    const failures: string[] = [];
+    for (const url of created.reverse()) {
+      const res = await request.delete(url).catch((e: Error) => e);
+      const status = res instanceof Error ? res.message : res.status();
+      if (![200, 204, 404].includes(status as number)) failures.push(`${url}: ${status}`); // 404: already gone
+    }
+    expect(failures, 'test-data teardown failed').toEqual([]);
   },
 });
 
