@@ -22,7 +22,7 @@ Grep for these markers to locate suites regardless of language.
 | JS | `selenium-webdriver`, `Builder()`, `driver.get(` |
 
 ### WebdriverIO / others
-- **WebdriverIO** (JS/TS): `@wdio/`, `browser.url(`, `$(`, `$$(`.
+- **WebdriverIO** (JS/TS): `@wdio/`, `wdio.conf.*`, `browser.url(`, `$(`/`$$(` (only meaningful inside a WDIO project — bare `$(` also matches jQuery).
 - **Cypress** (JS/TS): `cy.visit(`, `cy.get(` — same rubric applies if present.
 - **Protractor** (legacy): `browser.get(`, `element(by.` — flag for migration.
 
@@ -58,12 +58,23 @@ Read the body, not the name. Look for:
 | One end-to-end critical journey (checkout, signup, pay) | **UI** | Keep — one per journey |
 | Business rules, validation messages, calculations, permissions/authz, error codes, pagination/filter/sort, data mapping | **API** | Demote → name the endpoint |
 | Pure logic, formatting, parsing, no I/O | **Unit** | Demote → name the module |
+| One component's conditional rendering/interaction (per role, per state, inline errors), and a component harness exists | **Component** | Demote → name the component |
+| A validation/calculation enforced **only client-side** | **Unit/Component** | Demote to the validator; **flag the missing server-side check** — an API test can't prove a rule the server doesn't enforce |
+
+Ambiguous cases — decide explicitly and note the reasoning:
+- **Error text the server returns, rendered by the UI**: the *message mapping*
+  is API (assert the JSON); that the form *shows* an error is one UI/component smoke.
+- **Role-based menus**: authz rule → API per role; menu hidden for one role →
+  one UI or component test. Hiding a control is not access control.
+- **Cross-browser/rendering-engine bugs, file upload/download, drag-and-drop,
+  third-party iframes (payments, SSO redirects)**: keep at UI — they only exist in a browser.
 
 ## 4. For each demotion, output
 
 - Test id/file + line.
 - What it currently asserts and through how many UI steps.
-- Target level + the **specific API endpoint or unit** that should carry it.
+- Target level + the **specific API endpoint, component, or unit** that should carry it,
+  and whether that target (and a harness to test it) already exists.
 - Whether it collapses into an existing parameterized test (dedupe) or is new.
 - Rough payoff: est. runtime/flake removed, duplicates merged.
 

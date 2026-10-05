@@ -17,8 +17,9 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 | `getByText('Your order is confirmed')` | `page.locator('[data-v-3f8a92]')` |
 | `getByTestId('checkout-total')` | XPath tied to DOM hierarchy |
 
-- Prefer `getByRole`, `getByLabel`, `getByPlaceholder`, `getByText` — they mirror how a user finds things and survive styling refactors.
-- Use `getByTestId` only when no accessible handle exists; keep `data-testid` stable and semantic (not numbered or auto-generated).
+- Priority (Playwright's own): `getByRole` → `getByLabel` → `getByPlaceholder` → `getByText` → `getByAltText` / `getByTitle` → `getByTestId`. They mirror how a user finds things and survive styling refactors; `getByText` is for non-interactive content, not buttons or links.
+- Use `getByTestId` only when no accessible handle exists; keep `data-testid` stable and semantic (not numbered or auto-generated). If the app uses another attribute, set `use.testIdAttribute` in config rather than falling back to CSS.
+- Narrow with **chaining and filtering**, not positional indexes: `page.getByRole('listitem').filter({ hasText: 'Product 2' }).getByRole('button', { name: 'Add' })`. Avoid `.first()` / `.nth()` unless order *is* the behavior under test — they silence Playwright's strictness check and pick the wrong element when the list changes.
 - Never select by CSS class names, generated IDs, or XPath tied to layout or component internals.
 
 ## Page Object Model
@@ -34,14 +35,16 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 
 ## Waiting — assertions, never sleeps
 
-- Use Playwright's **web-first, auto-retrying assertions**: `await expect(locator).toBeVisible()`, `.toHaveText()`, `.toHaveValue()`, `.toHaveURL()`.
+- Use Playwright's **web-first, auto-retrying assertions**: `await expect(locator).toBeVisible()`, `.toHaveText()`, `.toHaveValue()`, `.toHaveCount()`, `expect(page).toHaveURL()`.
+- **Never assert on a one-shot read**: `expect(await locator.isVisible()).toBe(true)` or `expect(await locator.textContent()).toBe(…)` checks once and does not retry — use the matching web-first matcher instead.
+- **Await every Playwright call.** A missing `await` is a top source of flakes; enforce it with ESLint `@typescript-eslint/no-floating-promises` and run `tsc --noEmit` in CI.
 - **Never** call `page.waitForTimeout()` (or sleep via `setTimeout`) — it hard-codes a delay that will be wrong under load or on slow CI, and it's a flakiness factory.
 - For a specific condition without an assertion use `locator.waitFor({ state: 'visible' })` or `page.waitForResponse(/api\/orders/)` with a meaningful condition.
 - Increase `timeout` on a specific assertion for genuinely slow operations; do not increase the global default to mask problems.
 
 ## Structure & isolation
 
-- Every test is **fully independent**: sets up its own state, makes no assumptions about other tests, and passes in any order and in parallel.
+- Every test is **fully independent**: sets up its own state, makes no assumptions about other tests, and passes in any order and in parallel (see *Test data: setup and teardown*).
 - Use **fixtures** for shared setup: authenticated contexts, seeded data, storage state. Keep fixture files under `tests/fixtures/`.
 - Name spec files by **user journey**, not by page: `checkout-guest.spec.ts`, not `cart-page.spec.ts`.
 - **One journey per spec file**; a spec that covers ten unrelated flows makes failures hard to triage.
@@ -49,15 +52,28 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 
 ## Auth & state management
 
-- **Auth via storage state** — run login once in a global setup or a Playwright setup project, save the cookie/token state to a file (`storageState`), and reuse it per worker. Never re-run a full login flow in every test.
+- **Auth via storage state** — run login once in a Playwright **setup project** (preferred over `globalSetup`: it appears in the report, gets traces, and uses fixtures), save the cookie/token state to a file (`storageState`), and reuse it per worker. Never re-run a full login flow in every test.
 - Use **separate storage state files** per role (`admin.json`, `customer.json`) and reference them in fixture definitions so role-switching is explicit.
+- **Gitignore storage-state files** — they hold live session cookies/tokens. Read credentials from env vars/CI secrets, never commit them.
+- A test that **mutates server-side state of a shared account** (settings, cart, profile) must not share one storage state across parallel workers — use a per-worker account (worker-scoped fixture keyed on `testInfo.parallelIndex`) or API-seeded data unique to the test.
 - For tests that must start unauthenticated, override the fixture with an empty storage state — don't delete the default.
-- Prefer **API-seeded data** (via a `request` fixture) over UI-driven setup when setting up preconditions: faster, more reliable, and keeps the test focused on the user journey under test.
+
+## Test data: setup and teardown
+
+Non-negotiable for every spec that creates or changes server-side state. Code in `reference.md` → *Test data — create, track, tear down*.
+
+- **Each test creates the data it needs** through the API (`request` fixture), a DB helper, or a factory — never through the UI unless that UI is the thing under test — and never depends on pre-existing records or on another test's leftovers.
+- **Unique per test and worker.** Build names/emails from a run id + `testInfo.workerIndex` + a random suffix (`e2e-<run>-w3-a1b2c3`) so parallel workers, shards, and repeated runs never collide.
+- **Teardown always runs and deletes exactly what the test created.** Put create *and* delete in a fixture: the code after `await use(...)` runs even when the test fails. Track created ids and delete those; never truncate a shared table or "delete all orders". Cleanup written at the end of the test body is skipped by the first failing assertion.
+- **Prefer isolation that needs no cleanup**: a per-run tenant/org, an ephemeral environment or DB (per-PR env, Testcontainers), `page.route` mocks for third parties.
+- **Idempotent setup** (safe to re-run; create-or-reuse on the unique key) plus a scheduled **sweeper** that deletes data carrying the e2e prefix older than a few hours — a crashed or cancelled run leaves orphans no fixture teardown saw.
+- **Guard by environment.** Seeding and deleting run only against hosts on an allowlist (local, ephemeral, staging); the fixture refuses production and shared environments. Production runs stay read-only.
+- **Prove it**: the suite passes twice in a row (`--repeat-each=2`), a single test passes alone (`-g "<title>"`), the suite passes fully parallel (`--fully-parallel --workers=4`) — Playwright can't shuffle order, so alone + parallel is the order check — and afterwards no records with the run's prefix remain.
 
 ## Network interception
 
 - **Mock only what you don't own** (third-party services, slow external APIs). Never mock the system under test — that defeats the point of an E2E test.
-- Use `page.route(pattern, handler)` with `route.fulfill({ json: … })` for controlled stubs; always add a cleanup with `page.unroute` or scope it to the test.
+- Use `page.route(pattern, handler)` with `route.fulfill({ json: … })` for controlled stubs. Routes on `page`/`context` die with the test's context; only routes registered in a shared (worker-scoped) context need `unroute`. Register the route **before** the action that triggers the request.
 - Assert on network calls with `page.waitForResponse(url => …)` to confirm requests were made, not just that the UI changed.
 - Document mocked routes in the test or fixture: future maintainers need to know what is real and what is stubbed.
 
@@ -68,27 +84,38 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 | `await page.waitForTimeout(2000)` | `await expect(locator).toBeVisible()` |
 | `page.locator('.btn--primary')` | `page.getByRole('button', { name: '…' })` |
 | Login repeated in every `beforeEach` | `storageState` fixture shared per worker |
-| `test.only` or `test.skip` committed | Tag `@flaky` + open a tracking issue |
+| `test.only` committed | `forbidOnly: !!process.env.CI` in config fails the run |
+| Bare `test.skip()` to silence a failure | `test.fixme()` with an issue link in `annotation`; triage via `flaky-test-triage` |
+| `expect(await el.isVisible()).toBe(true)` | `await expect(el).toBeVisible()` (retries) |
+| Missing `await` on an action/assertion | `no-floating-promises` lint rule, `tsc --noEmit` in CI |
+| `.first()` / `.nth(2)` to dodge a strict-mode error | Make the locator unique: `filter({ hasText })`, chain from a container |
 | Assertions on CSS class or DOM shape | Assert on visible text, ARIA state, URL |
 | `page.evaluate(() => app.__store__.user)` | Assert through the UI or network responses |
-| `retries: 3` masking flaky tests | Fix root cause; zero retries on `main` branch |
+| `retries: 3` masking flaky tests | Low retries so flakes are *detected*, `failOnFlakyTests` on trunk, fix root cause |
 | Hard-coded `http://localhost:3000` | `baseURL` in config / `process.env.BASE_URL` |
 | One spec file covering every page | One spec file per user journey |
 | Empty `expect` (no assertion in test) | Every test must have at least one assertion |
+| Shared seed user (`test@example.com`) whose cart/settings tests change | Per-test data from a fixture, or a per-worker account |
+| Test relies on records another test created (order-dependent) | Each test seeds its own data via `request` in a fixture |
+| Cleanup at the end of the test body / only on the happy path | Delete after `await use()` in the fixture — runs on failure too |
+| `beforeAll` data that many tests mutate | Per-test fixture; `beforeAll`/worker data stays read-only |
+| Relying on a DB reset script that CI never runs | Fixture teardown + a scheduled sweeper for orphans |
 
 ## CI wiring
 
-- **Parallelise by worker** (`--workers=4` or `fullyParallel: true`) to keep suites fast.
+- **Parallelise by worker** (`fullyParallel: true`) and, for large suites, **shard across machines** (`--shard=1/4`) with the `blob` reporter + `npx playwright merge-reports` to rebuild one HTML report.
+- Install only the browsers you run: `npx playwright install --with-deps chromium`. Pin `@playwright/test` and upgrade deliberately (browsers are version-coupled).
 - Run the **full suite on PRs**; run only the `@smoke` tag subset in pre-deploy pipelines for speed.
-- Store traces and screenshots as **CI artifacts** on failure (`use: { trace: 'on-first-retry' }`).
-- Set **`retries: 0` on main/trunk** CI — surviving retries hide flakes. Allow `retries: 1` on PRs as a noise filter, but alert on any retry.
+- Store traces and screenshots as **CI artifacts** on failure (`trace: 'on-first-retry'` when retries > 0, else `'retain-on-failure'`); upload with `if: ${{ !cancelled() }}`.
+- **Retries detect flakes, they don't fix them.** A test that fails then passes is reported as *flaky*, not passed. Keep `retries` at 1–2 on CI so a flake doesn't block unrelated PRs, but set `failOnFlakyTests: true` on the trunk/nightly run (or alert on any flaky result) so it can't hide, and never raise retries to make a suite green.
+- `forbidOnly: !!process.env.CI` so a stray `test.only` can't silently shrink the run.
 - Gate merges on E2E status via a **required check**; never merge a PR that leaves the suite red.
 - Run the suite against your **staging URL** before production deploys; use `process.env.BASE_URL` to point the same suite at different environments.
 - **Nightly full-run** against production (read-only journeys): catches drift that PRs miss.
 
 ## Accessibility testing
 
-- Use `@axe-core/playwright` (`checkA11y`) as a fixture-level assertion on key pages to catch regressions automatically.
+- Use `@axe-core/playwright` (`new AxeBuilder({ page }).withTags([...]).analyze()`) as a fixture-level assertion on key pages to catch regressions automatically. (`checkA11y` is the API of the separate `axe-playwright` package — don't mix the two.)
 - Run axe checks after navigation, not during animations or transitions.
 - Failures from axe are assertions like any other — they block the test and surface in the report.
 
@@ -96,8 +123,8 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 
 - `npx playwright test --ui` — time-travel runner with trace viewer built in.
 - `--trace on` — record every action; open with `npx playwright show-trace trace.zip`.
-- `--headed --debug` — step through with the Playwright Inspector.
-- `PWDEBUG=1` — pause on the first `await page.pause()` call in the test.
+- `--debug` — runs headed with the Playwright Inspector, paused at the first action (same as `PWDEBUG=1`). `await page.pause()` adds a breakpoint anywhere.
+- Trace from CI: download the artifact and open it with `npx playwright show-trace` or at trace.playwright.dev — it has DOM snapshots, network, and console per action.
 - Use the Playwright MCP server to interactively navigate the live app and discover locators before writing the spec.
 
 ## Works well with
@@ -108,5 +135,5 @@ These objectives build on the same runner and fixtures; none is a hard dependenc
   isolation, unmocked third parties) instead of reaching for `retries`.
 - **`visual-regression`** — add `toHaveScreenshot` to journeys you already have
   specs for; they reuse the storage-state auth and seeded data for determinism.
-- **`accessibility-testing`** — drop `AxeBuilder`/`checkA11y` in as a
+- **`accessibility-testing`** — drop `AxeBuilder` in as a
   fixture-level assertion on key pages so a11y regressions block the same suite.

@@ -1,0 +1,82 @@
+{
+  "name": "qa-ai-repo",
+  "description": "Install reusable QA skills, agents, and MCP servers into Claude Code, Cursor, Windsurf, and other AI coding tools with one command.",
+  "owner": {
+    "name": "pnakhat",
+    "url": "https://github.com/pnakhat/qa-ai-repo"
+  },
+  "plugins": [
+    {
+      "name": "accessibility-testing",
+      "source": "./accessibility-testing",
+      "description": "Test web UIs for accessibility to WCAG 2.2 AA using both automation and the manual checks automation can't perform. Wires axe-core (`@axe-core/playwright`, `jest-axe`, `cypress-axe`) in as a fixture- and component-level assertion, then adds the human review that catches the rest: keyboard-only navigation, focus management and order, screen-reader semantics (roles, names, states), and meaningful accessible names. Automated tooling reliably catches only ~30–40% of real accessibility issues, so an axe pass is a floor, never a certificate. Enforces guardrails against `aria-label` spam, div-soup with role hacks, disabling axe rules to go green, and treating a clean axe run as full accessibility coverage. See the skill's `reference.md` for working setup code, rule/tag config, contrast thresholds, and a copy-pasteable manual checklist.",
+      "category": "testing"
+    },
+    {
+      "name": "api-contract-testing",
+      "source": "./api-contract-testing",
+      "description": "Catch breaking API changes before they ship — consumer-driven contracts (Pact) and spec-first validation (OpenAPI/Spectral/Schemathesis/oasdiff), across REST, GraphQL, and event/message boundaries. Enforces guardrails that reject exact-value matching in favour of type/shape matchers, require every pact and spec to carry a version + git sha, replace shared fixtures with per-interaction provider states, and treat any backward-incompatible change as a versioned breaking change. Wires provider verification, breaking-change diffs, and blocking can-i-deploy / record-deployment gates into CI so an incompatible release is stopped, not merely reported.",
+      "category": "testing"
+    },
+    {
+      "name": "flaky-test-triage",
+      "source": "./flaky-test-triage",
+      "description": "Detect and quantify flaky tests — compute a suite-wide flake rate and a per-test flake score from reruns and CI history, and flag any test that passes-on-retry or fails only in certain orders. Classify each flake by root cause (async/timing, shared state & ordering, external dependencies, animations, time/locale/randomness, resource leaks) using tell-tale signals, then fix it at the root: web-first assertions over sleeps, per-test isolation over shared fixtures, mock only what you don't own, frozen clocks and seeded RNG, disabled animations, and disposed resources. When a fix can't land immediately, quarantine with discipline — tag `@flaky`, move it to a non-blocking lane, and require an owner, a tracking issue, and an SLA — never blanket retries. Enforces guardrails against hiding flake behind `retries`, deleting the failing test to make CI green, and quarantining forever with no owner or SLA; a quarantine un-quarantines only after N consecutive green runs, and a breached SLA auto-escalates to fix-or-delete.",
+      "category": "testing"
+    },
+    {
+      "name": "jest-coverage-mutation",
+      "source": "./jest-coverage-mutation",
+      "description": "Measure how good your unit tests actually are — set up Jest code coverage, then Stryker mutation testing to prove the tests catch real bugs (not just execute lines). Interpret mutation score, kill survived mutants, and gate CI on both. Enforces guardrails against coverage theater: no assertion-free tests, no gaming the score by excluding mutators or files, every fix must kill a specific survived mutant, mutation is scoped to high-risk logic (changed-code on PRs, full run nightly), and CI is gated on a Stryker break threshold — not coverage % alone.",
+      "category": "testing"
+    },
+    {
+      "name": "llm-eval",
+      "source": "./llm-eval",
+      "description": "Prove an LLM/RAG/agent feature is correct with numbers a release can gate on — author eval suites in DeepEval with the metric definitions baked in: faithfulness and answer relevancy (generator), contextual precision/recall/relevancy (retriever), hallucination against ground truth, tool-call correctness for agents, plus custom G-Eval criteria, bias, and toxicity. Builds a versioned golden dataset FIRST, picks the metric that matches the actual failure mode (RAG hallucination -> faithfulness; retrieval miss -> contextual recall; wrong tool -> tool correctness), and turns every threshold into a pytest / `deepeval test run` exit code so a regression blocks the pipeline. Enforces guardrails against unpinned LLM-as-judge models, exact-string-matching non-deterministic output, contaminated goldens that leak the prompt's own examples, single-run scores with no variance, averaging unrelated metrics into one number that hides a failing dimension, and getting metric direction wrong (since deepeval 4.2.0 hallucination/bias/toxicity score the clean share and pass at score >= threshold; older versions inverted that, so the version is pinned and thresholds re-baselined across the change). Adds an adversarial/safety slice (prompt injection, jailbreak, PII) and judge calibration against human labels.",
+      "category": "testing"
+    },
+    {
+      "name": "performance-testing",
+      "source": "./performance-testing",
+      "description": "Prove a system meets its speed and scale targets under realistic load — backend load, stress, soak, and spike testing with k6, and frontend web-vitals with Lighthouse. Defines SLOs (p95/p99 latency, error rate, throughput/RPS, and LCP/INP/CLS) FIRST, models a workload from real traffic with think time and ramp stages, then expresses every threshold as a pass/fail CI gate so a regression blocks the pipeline instead of being noticed in production. Always reports percentiles, never averages, because an average hides the slow tail that users actually feel. Enforces guardrails against averages-over-percentiles, zero-think-time hammering, testing an under-provisioned or localhost environment and extrapolating to production, drawing a trend from a single run, and chasing latency while ignoring the error rate at load.",
+      "category": "testing"
+    },
+    {
+      "name": "playwright-bdd",
+      "source": "./playwright-bdd",
+      "description": "Convert imperative Playwright tests into BDD: auto-generate Gherkin .feature specs written in business language (not clicks and selectors), and wire the step definitions to Playwright fixtures and page objects using the playwright-bdd runner. Enforces guardrails against UI mechanics leaking into specs — rejecting selectors, URLs, labels, keystrokes, and waits in Gherkin, keeping mechanics in page objects, and requiring one When and one outcome per scenario with generic, parameterized, domain-language steps. Preserves behavior (verified with bddgen && playwright test before deleting the original) while making specs readable by non-engineers, and wires the generated suite into CI with tag filtering and committed behavior docs.",
+      "category": "testing"
+    },
+    {
+      "name": "playwright-e2e",
+      "source": "./playwright-e2e",
+      "description": "Author and maintain resilient Playwright end-to-end tests using the Page Object Model, fixtures, stable user-facing locators, and web-first assertions. Enforces guardrails against flakiness, brittle selectors, and shared state. Drives Playwright's built-in planner, generator, and healer agents (playwright-test MCP) and refactors their output to project conventions; also includes the live-browser Playwright MCP server.",
+      "category": "testing"
+    },
+    {
+      "name": "qa-strategy",
+      "source": "./qa-strategy",
+      "description": "Pre-fill what the codebase shows, then ask only the decision-relevant intake questions (product, stack, team size, release cadence) as multiple-choice option sets, then generate a tailored, risk-based QA strategy with an automation plan, quality gates, tooling, and a phased rollout. Scores features by likelihood × impact to focus coverage where it matters, and defines metrics (escape rate, DORA lead time / change fail rate / recovery time, flake rate, mutation score) with precise formulas and enforcing CI gates. Enforces guardrails against invented inputs, big-bang rewrites, one-size-fits-all strategies, testing theater, and vanity metrics with no gate — every recommendation must trace to a stated intake input and land as a measurable gate.",
+      "category": "testing"
+    },
+    {
+      "name": "test-pyramid",
+      "source": "./test-pyramid",
+      "description": "Analyze an application end to end — frontend, backend, and middleware — and produce a complete test pyramid: exactly what to test at each layer and each level (unit, integration/component, contract, E2E), where each behavior belongs, and which tools to use. Enforces guardrails that assign every behavior to the lowest effective level, cover each seam with a contract instead of an E2E, keep backend rules out of the UI, forbid mocking the system under test and duplicate cross-layer coverage, and hold E2E to a justified handful — with runnable per-level example tests and CI wiring (which suite runs at pre-commit / PR / merge / nightly, and which stages gate merges).",
+      "category": "testing"
+    },
+    {
+      "name": "ui-test-auditor",
+      "source": "./ui-test-auditor",
+      "description": "Scan Playwright, WebdriverIO, and Selenium/WebDriver suites in any language (TS/JS, Python, Java, C#, Ruby) to find where UI/E2E tests are overused. For each, decide keep-as-UI, demote-to-API, or demote-to-unit — collapsing data-driven repetition (validation matrices, role/permission loops, calculation checks) into parameterized API tests and keeping only genuine browser journeys at the top. Enforces guardrails: relocate coverage never delete it, name a specific target endpoint or unit for every demotion, keep exactly one UI happy-path per journey, classify on the test body not its title, and rank recommendations by payoff (slowest/flakiest/most-duplicated first). Ships ready-to-run ripgrep inventory commands and cross-language before/after conversions, and produces a per-test migration report rather than rewriting files.",
+      "category": "testing"
+    },
+    {
+      "name": "visual-regression",
+      "source": "./visual-regression",
+      "description": "Set up reliable perceptual and pixel screenshot diffing with Playwright's `toHaveScreenshot` that catches real visual bugs without drowning teams in false positives. Determinism comes first: disable animations and transitions, freeze the clock and seed or mock data, pin fonts, viewport, and device-scale factor, and generate baselines in a container that matches CI so anti-aliasing lines up. Tunes thresholds (`maxDiffPixelRatio`, `maxDiffPixels`) starting strict and loosening only with justification, masks dynamic regions like timestamps and avatars, and right-sizes scope to the smallest meaningful region — component snapshots over full-page goldens. Treats every diff as a question to triage, not an automatic failure, and reviews baseline changes deliberately. Enforces guardrails against committing laptop-generated baselines, zero-threshold subpixel noise, blind `--update-snapshots`, and snapshotting a whole page to check one component.",
+      "category": "testing"
+    }
+  ]
+}

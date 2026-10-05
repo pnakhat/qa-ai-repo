@@ -17,14 +17,35 @@ threshold, eliminate every source of nondeterministic pixels.
 
 | Source of nondeterminism | Fix |
 |--------------------------|-----|
-| CSS animations & transitions | Pass `animations: 'disabled'` to `toHaveScreenshot`; inject a global stylesheet that zeroes `transition`/`animation` duration |
+| CSS animations & transitions | `toHaveScreenshot` already defaults to `animations: 'disabled'` (finite ones fast-forward, infinite ones reset); add a global stylesheet zeroing `transition`/`animation` for JS-driven motion and the states *before* the shot |
 | Time, dates, relative timestamps ("2m ago") | Freeze the clock before navigation. `page.clock.setFixedTime(...)` pins `Date` but timers keep running — enough for rendered dates. If timers drive what's on screen (countdowns, carousels, polling), use `page.clock.install({ time })` + `page.clock.pauseAt(...)` instead |
 | Random or live data (feeds, prices, ids) | Seed a fixed dataset or mock the API with `page.route`; never snapshot live production data |
 | Web fonts loading late | Bundle/self-host fonts; `await document.fonts.ready` before the snapshot so text isn't captured mid-swap |
 | Viewport & `deviceScaleFactor` drift | Pin both in the Playwright project — a 1x vs 2x capture diffs on every pixel |
 | OS-level font rendering & anti-aliasing | Generate baselines in the **same container image** as CI — this is non-negotiable (see below) |
-| Lazy-loaded images / spinners still spinning | Wait for network idle, every `<img>` to finish decoding, and the real content locator before capturing |
-| Caret blink, hover/focus bleed | Blur the active element; capture a deliberate state, not an accidental one |
+| Lazy-loaded images / spinners still spinning | Wait for the real content with a web-first assertion (`await expect(list).toBeVisible()`, spinner `toBeHidden()`) and every `<img>` to decode. Don't rely on `networkidle` — Playwright marks it **discouraged** for tests |
+| Caret blink, hover/focus bleed | Caret is hidden by default (`caret: 'hide'`); blur the active element and move the mouse away; capture a deliberate state, not an accidental one |
+| Scrollbars, cursor, third-party widgets | Hide them with a screenshot-only stylesheet via `stylePath` — applied during capture only, never changes app behaviour |
+
+## Test data: setup and teardown
+
+Pixels need the *same* data every run; the environment needs *no* data left
+behind. Code in `reference.md` → *Seeding / mocking dynamic data*.
+
+- **Mock at the boundary first.** `page.route` with a fixed payload gives
+  identical pixels and needs no cleanup — the default for visual tests.
+- **When a real backend must render the view**, each test seeds a fixed
+  dataset through the API in a fixture (never through the UI, never relying on
+  whatever records the environment already holds) and deletes it after
+  `await use()`, which runs when the screenshot fails too.
+- **Unique ids, stable pixels.** Records still need per-test/worker unique
+  keys so parallel runs don't collide — keep them out of the rendered output
+  (fixed display names inside a per-test tenant/account), or `mask` them.
+- **Prefer no-cleanup isolation**: a per-run tenant or an ephemeral backend in
+  the same container stack that renders the baselines.
+- **Guard by environment** and never seed or snapshot against production data.
+- **Prove it**: `--repeat-each=3 --update-snapshots=none` (already the stability
+  check below) also runs fully parallel and leaves no seeded records behind.
 
 ## Baselines belong to CI, not your laptop
 
@@ -56,7 +77,7 @@ dedicated CI job — see `reference.md` for both.
 | Option | What it does | Guidance |
 |--------|--------------|----------|
 | `maxDiffPixels` | Absolute count of differing pixels allowed | Good for tiny fixed regions; brittle as content grows |
-| `maxDiffPixelRatio` | Fraction of the image allowed to differ (0–1) | **Preferred** default — scales with image size; start near `0.01` and justify anything higher |
+| `maxDiffPixelRatio` | Fraction of the image allowed to differ (0–1) | **Preferred** default — scales with image size; start near `0.01` and justify anything higher. Mind the size: 1% of a 1280×800 page is ~10,000 px — enough to hide a missing icon, another reason to snapshot small regions |
 | `threshold` | Per-pixel color-distance tolerance (0–1, default `0.2`) | Absorbs subpixel anti-aliasing; **do not set to 0** — that guarantees flakes |
 
 - Start strict, loosen only with a written justification in the PR (what dynamic
@@ -65,6 +86,9 @@ dedicated CI job — see `reference.md` for both.
   only where a specific view genuinely needs it.
 - Keep **per-platform baseline files** via `snapshotPathTemplate` so a Linux
   baseline never gets compared against a macOS render.
+- `threshold` is perceptual (YIQ color distance), not a percentage: it decides
+  whether *a pixel* differs; `maxDiffPixels`/`maxDiffPixelRatio` decide how many
+  differing pixels fail the test. Tune them separately.
 
 ## Masking dynamic regions
 
@@ -83,6 +107,9 @@ await expect(page).toHaveScreenshot('dashboard.png', {
 ```
 
 Mask timestamps, user avatars, ads/promos, carousels, and any live counter.
+Masks paint the locator's box (`maskColor`, default `#FF00FF`); layout around it
+is still compared. If the region's *size* varies too, fix its size with
+`stylePath` CSS or freeze its data instead.
 Masking is surgical; a loosened global threshold is a blunt instrument that hides
 real regressions everywhere else in the frame.
 
@@ -104,6 +131,18 @@ check one button breaks on every unrelated layout change and buries the signal.
 - Reserve **page-level** snapshots for genuinely layout-critical views (a landing
   page, a print/receipt layout) where the whole composition is the contract.
 
+## Is a screenshot the right assertion?
+
+| You want to pin… | Use |
+|------------------|-----|
+| Layout, spacing, color, typography, icons — how it *looks* | `toHaveScreenshot` |
+| Roles, names, states, structure — what it *is* (also a11y-relevant) | `toMatchAriaSnapshot` — text, cross-platform, no container needed |
+| A value, text, or computed result | `toHaveText` / `toHaveValue`, or a unit/API test |
+| One CSS property (focus ring color, `display`) | `toHaveCSS` |
+
+A screenshot is the slowest, most environment-sensitive assertion; use it only
+for what can't be stated any other way.
+
 ## Review workflow — a diff is a question, not a verdict
 
 A failing visual test is asking "did you mean to change this?" Answer it; don't
@@ -120,6 +159,15 @@ reflexively update. Triage every diff into exactly one of three buckets:
   real regressions (b) and flakes (c) as intended (a) and destroys the signal.
 - Baseline changes get reviewed in the PR diff like any other artifact.
 
+**Update modes** (`--update-snapshots` / `-u`):
+
+| Mode | Writes | Use for |
+|------|--------|---------|
+| `none` | nothing | CI compare-only, stability proofs |
+| `missing` | only absent baselines — **the default with no flag** | first baselines for new tests |
+| `changed` | mismatched + missing — **the default for a bare `-u`** | updating a reviewed, intended change |
+| `all` | every executed snapshot, even passing ones | almost never — rewrites PNGs within tolerance and floods the PR diff |
+
 ## Anti-patterns — smells to reject
 
 | ❌ Smell | ✅ Fix |
@@ -134,6 +182,11 @@ reflexively update. Triage every diff into exactly one of three buckets:
 | Loosening the global threshold to silence one flaky region | Mask that region; keep the rest strict |
 | Baseline regenerated on `main` to turn red green | Fix the cause; update baselines only via reviewed PRs |
 | Fonts not awaited, text captured mid-swap | `await document.fonts.ready` before capturing |
+| `waitForLoadState('networkidle')` / `waitForTimeout` as the readiness gate | Web-first assertion on the real content, then capture |
+| `--update-snapshots=all` to refresh one view | Target the spec with `-u` (`changed`) so passing PNGs aren't rewritten |
+| Snapshot of whatever records a shared environment happens to hold | Mock the API, or seed a fixed dataset per test and delete it after `use()` |
+| Seeded data shared by many visual tests, one of which edits it | Per-test seed; shared data stays read-only |
+| Unique test id (`e2e-8f3a…`) rendered in the shot | Fixed display values in an isolated tenant, or `mask` the id |
 
 ## CI wiring
 

@@ -34,10 +34,22 @@ for a runnable example test at every level (plus a "push a test down" before/aft
 3. **Cover the seams, not the internals twice.** Where two layers meet, use a
    contract test once instead of re-testing both sides through E2E.
 
-4. **Set the shape.** Aim for a true pyramid, roughly:
-   - ~70% unit · ~20% integration/component · <10% contract+E2E (E2E a small
-     handful). If the current suite is an inverted "ice-cream cone" (mostly E2E),
-     call it out and give the rebalancing plan.
+4. **Set the shape — pick it from the architecture, then hold it.** The ratios
+   are heuristics, not laws; choose the model that fits and state why:
+
+   | Architecture | Shape | Typical mix (by test count) |
+   |--------------|-------|-----------------------------|
+   | Logic-heavy backend / libraries / monolith | **Pyramid** (Cohn, Fowler) | Google's guideline ≈ 80% small · 15% medium · 5% large; the older 70/20/10 is fine too |
+   | Frontend-heavy app (React/Vue, thin domain logic) | **Testing trophy** (Dodds) | Static analysis base; *mostly* component/integration tests; few units for real logic; a handful of E2E |
+   | Many small services, little logic per service | **Honeycomb** (Spotify) | Mostly service-level integration tests against real infra; few "implementation detail" units; contracts at every seam |
+
+   All three agree on the part that matters: **E2E stays a small, justified
+   handful** and every seam has a contract. Classify by **size** (Google: small =
+   one process, no I/O; medium = one machine, localhost only; large = multiple
+   machines/real services) rather than fuzzy names — size predicts speed and
+   flakiness. Track runtime per level too: 30 E2E tests can cost more than 3,000
+   units. If the current suite is an inverted "ice-cream cone" (mostly E2E),
+   call it out and give the rebalancing plan.
 
 5. **Output the plan** using `plan-template.md`: per-layer test lists, the seam
    contracts, the few E2E journeys, target proportions, tooling, CI wiring, and
@@ -75,6 +87,10 @@ for a runnable example test at every level (plus a "push a test down" before/aft
 | Integration tests hitting shared staging DBs or live third-party APIs | Ephemeral containers (Testcontainers/LocalStack) + WireMock for third parties |
 | E2E used as the only check on a seam between two services you own | Consumer + provider **contract**; reserve E2E for full-journey coverage |
 | "Component" tests that spin up the real backend | Mock the network (MSW) — the backend is proved in its own suite |
+| Chasing a ratio (e.g. writing trivial units to "hit 70%") | The ratio is a symptom check; the rule is *lowest level that can prove the behavior* |
+| Forcing a pyramid onto a thin-logic UI or a mesh of tiny services | Pick trophy or honeycomb (step 4) and say why |
+| No static base — type errors and lint issues found by tests | Typecheck + lint as the cheapest gate, before any test runs |
+| Every layer shares one long-lived seeded staging DB that tests mutate and a reset job nobody runs | Per-layer isolation: in-memory → Testcontainers → provider states → API-seeded E2E data with teardown |
 
 ## CI wiring
 
@@ -83,23 +99,28 @@ stages. Each layer earns its place in the pipeline by speed and blast radius.
 
 | Stage | Runs | Rationale | Gate |
 |-------|------|-----------|------|
-| **Pre-commit** (hook) | Changed-file **unit** tests, lint, typecheck | Sub-second feedback; catch typos/logic before push | Local only |
+| **Pre-commit** (hook) | Lint, typecheck (the static base), changed-file **unit** tests | Sub-second feedback; catch typos/logic before push | Local only |
 | **PR / pull request** | Full **unit** + **component/integration** (Testcontainers) + **consumer contracts** (publish pacts) | The bulk of coverage; fast enough to block merge | **Required check — blocks merge** |
-| **Merge / main** | **Provider contract verification** against published pacts + smoke E2E | Confirms both sides of every seam still agree before it lands | **Required — revert on red** |
+| **Provider PR / main** | **Provider contract verification** (`mainBranch` + `deployedOrReleased` pacts, plus a webhook-triggered build when a consumer publishes a changed pact) + smoke E2E | Confirms both sides of every seam still agree before it lands | **Required — revert on red** |
+| **Before each deploy** | `pact-broker can-i-deploy --pacticipant <app> --version <sha> --to-environment <env>`, then `record-deployment` after | The broker knows which versions are compatible with what is actually deployed | **Blocks the deploy** |
 | **Nightly / scheduled** | Full **E2E** suite, performance/load (k6), security (SAST/DAST), full a11y | Slow, broad, environment-heavy; not needed per-PR | Alert on failure; triage next morning |
 
-- **Merge gates:** PR unit+integration+contract must be green; provider verification must
-  pass before a consumer's contract-changing PR merges (use a Pact broker's `can-i-deploy`).
+- **Merge gates:** PR unit+integration+contract must be green; a consumer PR that changes a
+  pact merges only once the provider has verified it (`can-i-deploy` answers this).
 - **Zero retries on main.** Retries hide flakes; a retried green is a bug to fix, not pass.
 - **Fail fast, cheap first:** order stages unit → integration → contract → E2E so the
   cheapest signal blocks earliest and the expensive suites only run once the base is green.
 - **Parallelize by layer/shard** to keep the PR stage under a few minutes as the suite grows.
-- **Publish contracts on PR, verify on merge:** consumers publish pacts tagged with the
-  branch; providers verify them so a breaking API change fails *before* it ships.
+- **Publish with branch, deploy by environment:** consumers publish pacts with
+  `--branch` (tags are legacy); providers verify via consumer version selectors; every
+  deploy is gated by `can-i-deploy` and recorded with `record-deployment` so a breaking
+  API change fails *before* it ships.
 
 ## Principles
 
 - **Push tests down.** A bug catchable by a unit test should not need an E2E.
+- **Static analysis is the base.** Types and lint catch a whole class of bugs for
+  free; don't write tests for what the compiler already proves.
 - **Contracts replace integration E2E.** Seams verified by contracts let you
   delete most cross-service E2E.
 - **Test behavior, not implementation.** Especially in the FE — assert what the
@@ -107,6 +128,15 @@ stages. Each layer earns its place in the pipeline by speed and blast radius.
 - **Isolation + speed at the base**, realism concentrated at the seams, breadth
   only at the tip.
 - **Right-size to risk:** put the extra depth on revenue/safety-critical flows.
+- **Test data and environments are part of the plan.** Name, per layer, how a
+  test gets its data and how it is removed: unit builds inputs in memory;
+  integration uses an ephemeral DB (Testcontainers) with per-test rollback or
+  delete; contract provider states set up *and* tear down; E2E creates data via
+  the API in fixtures and deletes it afterwards, with unique per-worker ids and a
+  sweeper for orphans. Destructive setup never runs against shared or production
+  environments, and every suite must pass twice in a row, shuffled, and in
+  parallel. The tool skills (`playwright-e2e`, `api-contract-testing`,
+  `performance-testing`, …) hold the detailed rules.
 
 ## Works well with
 

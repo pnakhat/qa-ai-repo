@@ -21,7 +21,7 @@ the API and test those rules in the BE.
 |-------|------------------------|-------|
 | Unit | Domain/business logic, calculations, state machines, validators, mappers — no I/O | Jest/Vitest, Pytest, JUnit, Go test, RSpec |
 | Integration | Repositories/ORM against a **real DB**, route/controller handlers, external adapters, migrations | Testcontainers, Supertest, test DB, WireMock for third parties |
-| Contract (provider) | Verify the provider satisfies every consumer contract; conform to the published OpenAPI/GraphQL schema | Pact (provider verification), Schemathesis, Dredd, oasdiff |
+| Contract (provider) | Verify the provider satisfies every consumer contract; conform to the published OpenAPI/GraphQL schema | Pact (provider verification), Schemathesis (property-based OpenAPI fuzzing), oasdiff (breaking-change diff); Dredd is archived (Nov 2024) — don't adopt it |
 | Component / service | The whole service in isolation with downstreams stubbed | in-process HTTP + mocked deps |
 
 ## Middleware (gateway / queues / auth / cache / workers)
@@ -44,7 +44,9 @@ the API and test those rules in the BE.
 
 ## Target shape
 
-- ~70% unit · ~20% integration/component · ~7% contract · ~3% E2E (a small,
-  fixed set). Contracts do the heavy lifting at seams so E2E stays tiny.
+- Pyramid default (backend/logic-heavy): ≈ 80% small · 15% medium · 5% large
+  (Google), or 70/20/10. Trophy (FE-heavy) and honeycomb (microservices) shift
+  the bulk to component/integration — choose per step 4 of the `test-pyramid` skill's Method and state why.
+- In every shape, contracts do the heavy lifting at seams so E2E stays tiny.
 - Inverted suite (mostly slow E2E)? Push each E2E down: replace with a component
   test (FE), an integration test (BE), or a contract test (seam) wherever possible.

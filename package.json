@@ -12,7 +12,8 @@
   },
   "scripts": {
     "start": "node bin/qa-ai.js",
-    "test": "node --test"
+    "test": "node --test",
+    "build:plugins": "node scripts/build-plugins.js"
   },
   "keywords": [
     "qa",

@@ -13,7 +13,10 @@ fix you land — **never** a nuisance you retry away.
 ## How to run
 
 1. **Confirm it's flake, not a real bug.** Reproduce on the exact commit. If it
-   fails deterministically, it's a bug — route it to the code, not here.
+   fails deterministically, it's a bug — route it to the code, not here. And a
+   flake is not automatically a *test* defect: races in the product (double
+   submit, unawaited write, non-atomic counter) show up as flaky tests first.
+   Rule out a product concurrency bug before "fixing" the test.
 2. **Quantify.** Compute the suite flake rate and a per-test flake score from
    reruns + CI history (formulas below). Rank by score × blast radius.
 3. **Reproduce the non-determinism.** Rerun the suspect many times; shuffle order;
@@ -27,14 +30,21 @@ fix you land — **never** a nuisance you retry away.
 
 ## Taxonomy — cause → tell-tale signal → fix direction
 
+Grounded in Luo et al., *An Empirical Analysis of Flaky Tests* (FSE 2014), whose
+top three root causes were async wait, concurrency, and test-order dependency,
+plus browser-specific causes.
+
 | Cause | Tell-tale signal | Fix direction |
 |-------|------------------|---------------|
 | **Async / timing** | Passes on retry; fails on slow/loaded CI; `waitForTimeout`/`sleep` in the body | Web-first auto-retrying assertions; wait on the condition, not the clock |
+| **Concurrency (product or test)** | Fails under parallel load / high `--repeat-each`; races on the same record; double-submit | Fix the race in the product if it's real (it's a bug); else serialize *that* resource, not the suite |
 | **Shared state & ordering** | Fails only in some orders; green alone, red in suite; passes with `--workers=1` | Per-test setup/teardown; fresh state; no cross-test globals |
 | **External dependencies** | Fails when a third-party/API is slow or down; network in the stack trace | Mock what you don't own; stub the boundary; retry only the real integration lane |
 | **Animations / transitions** | Fails mid-transition; screenshot diffs by a few px; timing-sensitive clicks | Disable animations; assert post-settle state |
 | **Time / locale / randomness** | Fails at midnight, month/DST boundaries, in another TZ, or ~1 run in N | Freeze the clock; pin TZ/locale; seed the RNG |
-| **Resource leaks** | Degrades as the suite runs; late tests flake; OOM/handle exhaustion | Dispose/close in teardown; reset pools; cap concurrency |
+| **Resource leaks** | Degrades as the suite runs; late tests flake; OOM/handle exhaustion; Jest "did not exit" | Dispose/close in teardown; reset pools; `jest --detectOpenHandles` to find them |
+| **Unordered collections / float** | Asserts on `Set`/object-key/DB-row order without `ORDER BY`; `0.1+0.2` equality | Sort before comparing or use order-insensitive matchers; `toBeCloseTo` / tolerance |
+| **Infrastructure / environment** | Only on one runner image/browser; DNS/OOM/disk errors; fails across many unrelated tests at once | Not the test — fix or pin the environment; track separately from test flake |
 
 ## Detection — make it flip on demand
 
@@ -49,11 +59,13 @@ You can't fix what you can't reproduce. Force the flake to show itself.
 | Reproduce locally before proposing a fix | "Fix" blind, then hope CI goes green |
 
 - **Playwright:** `npx playwright test suspect.spec.ts --repeat-each=50 --workers=1`
-  to loop; `--retries=2` in CI only to *label* flake (any survived-on-retry is a
-  finding), never as a cure. Order isolation: run the file alone vs. in the suite.
-- **Jest / Vitest:** loop the test (`for i in {1..50}; do npx jest -t 'name' || break; done`),
-  or run with `--runInBand` vs. parallel to expose shared state; `--shuffle`
-  (Vitest `sequence.shuffle`) to expose ordering.
+  to loop; in CI, retries only *label* flake (the report marks the test `flaky`),
+  never cure it — pair them with `--fail-on-flaky-tests` so a pass-on-retry still
+  fails the blocking gate. Order isolation: run the file alone vs. in the suite.
+- **Jest:** loop the test (`for i in {1..50}; do npx jest -t 'name' || break; done`);
+  `--runInBand` vs. parallel to expose shared state; `--randomize --seed=N` (Jest
+  ≥ 29.2, jest-circus) to expose ordering — there is no `--shuffle` flag.
+- **Vitest:** `--repeats=50`; `--sequence.shuffle --sequence.seed=N` for order.
 - **pytest:** `pytest --count=50 test_x.py` (`pytest-repeat`), `pytest-flakefinder`,
   and `pytest-randomly` to shuffle order + vary seed. Full commands in `reference.md`.
 
@@ -107,18 +119,44 @@ Fix the cause the taxonomy named. Recipes with before/after code in `reference.m
   is acceptable because the flake is genuinely the network.
 - **Animations** → disable animations/transitions in test config
   (`reducedMotion`, CSS override); assert on the settled post-transition state.
-- **Time / locale / randomness** → freeze the clock (`sinon.useFakeTimers`,
-  `jest.useFakeTimers`, `freezegun`); pin `TZ` and locale; seed the RNG so the
+- **Time / locale / randomness** → freeze the clock (`jest.useFakeTimers`,
+  `vi.useFakeTimers`, Playwright `page.clock.setFixedTime`, `freezegun`); pin `TZ`
+  and locale (`timezoneId`/`locale` in Playwright `use`); seed the RNG so the
   "random" input is reproducible.
 - **Resource leaks** → close connections, clear timers, dispose browser
   contexts, and reset pools in teardown; cap worker concurrency if the leak is
   environmental.
 
+## Test data: setup and teardown
+
+Leaked test data is the most common *Shared state & ordering* flake: a test that
+reads a record another test created, a unique-key collision between workers, a
+row a crashed run left behind. The fix: each test creates its own uniquely named
+data and deletes it in teardown that also runs when the test fails. If the
+suite's objective is installed, its skill has the framework details: *Test data:
+setup and teardown* in `playwright-e2e`, `playwright-bdd`, `performance-testing`
+and `api-contract-testing`, and *Test isolation: setup and teardown* in
+`jest-coverage-mutation`. When triaging, check for:
+
+- **Order dependence on data**: green alone, red in the suite (or the reverse) →
+  the test consumes or collides with another test's records. Each test must
+  create its own data.
+- **Collisions in parallel or on re-run**: duplicate-key / "already exists"
+  errors, or fails only on the second run → identifiers aren't unique per test,
+  worker, and run.
+- **Cleanup that only runs on the happy path**: residue appears after a failed
+  run → move teardown into a fixture (`use()` / `yield` / `finally` /
+  `afterEach`) so it runs on failure, deleting the ids the test tracked.
+- **Orphans from crashed runs** → an age-based sweeper by run-id prefix.
+- **Proof of fix**: passes twice in a row, shuffled, and in parallel, and leaves
+  no records behind (Recipe B in `reference.md`).
+
 ## Anti-patterns — smells to reject
 
 | ❌ Smell | ✅ Fix |
 |---------|--------|
-| `retries: 3` on trunk to make it green | `retries: 0` on trunk; measure flake rate; fix root cause |
+| `retries: 3` on trunk to make it green | `retries: 0` on trunk — or retries **with** `--fail-on-flaky-tests` purely to label; fix root cause |
+| `jest.retryTimes(3)` / `--retry.count` added globally | Retries only in the quarantine/integration lane, with `logErrorsBeforeRetry: true` so every flake is recorded |
 | `await page.waitForTimeout(2000)` / `time.sleep(2)` | Web-first assertion or wait-for-condition |
 | Widening global timeouts to absorb the flake | Wait on the actual condition; fix the slow/racy step |
 | `--workers=1` forever to dodge a shared-state bug | Remove the shared state; per-test fresh state so tests pass in parallel |
@@ -128,9 +166,14 @@ Fix the cause the taxonomy named. Recipes with before/after code in `reference.m
 | "Just re-run CI until it's green" | Re-run *counts* as a flake data point, not a pass |
 | Shared global fixture mutated across tests | Per-test fresh state; isolate setup/teardown |
 | `beforeAll` seeding that later tests depend on | `beforeEach` per-test seed; no ordering assumptions |
+| Cleanup at the end of the test body, skipped when it fails | Teardown in a fixture/`afterEach`/`finally` that always runs |
+| Shared seed user that tests mutate | Data created per test with unique ids |
+| Relying on a DB reset that never runs in CI | Per-test teardown + an age-based sweeper |
 | Real third-party call in a unit/E2E happy-path | Mock what you don't own; isolate the live integration lane |
 | Screenshot assert during a transition | Disable animations; assert the settled state |
 | `Math.random()` / `Date.now()` in the assertion path | Seed RNG; freeze the clock |
+| Asserting on array order the code never guarantees | Sort first, or `expect.arrayContaining` / order-insensitive compare |
+| Blaming the test for a real race in the product | Reproduce under load; if the product races, file and fix the product bug |
 | "Passed on the second try, closing" | Not a pass — reproduce, classify, fix |
 
 ## Works well with

@@ -7,19 +7,28 @@ Choose by *who owns the consumers* and *what the source of truth is*.
   .NET, Go, Python, Ruby, PHP, Rust. Use with a **Pact Broker** or **PactFlow**
   for storing contracts, `can-i-deploy`, and webhooks.
 - Use when: internal microservices, you control the consumers, HTTP or messages.
+- **PactFlow bi-directional** — consumer pacts compared against the provider's
+  OpenAPI spec (plus evidence the spec was tested). Use when the provider can't
+  run Pact verification.
 
 ## Spec-first (OpenAPI / REST)
 - **Spectral** — lint the OpenAPI spec (style + governance) in CI.
-- **Schemathesis** — property-based fuzzing that checks responses conform to the
-  OpenAPI schema; great at finding edge-case violations.
-- **Dredd** — validate an API against its OpenAPI/API Blueprint examples.
+- **Schemathesis** (v4) — property-based fuzzing that checks responses conform to
+  the OpenAPI schema; great at finding edge-case violations. Also replays spec
+  examples (`--phases examples`) and does stateful link-based sequences.
+- **Dredd** — *archived Nov 2024, unmaintained*. Don't adopt it; migrate example
+  replay to Schemathesis.
 - **Prism** — spin up a mock server from the spec so consumers develop against
   the contract; also does request/response validation as a proxy.
-- **oasdiff** — diff two OpenAPI specs and fail CI on breaking changes.
+- **oasdiff** — diff two OpenAPI specs and fail CI on breaking changes
+  (`oasdiff/oasdiff-action/breaking` for GitHub Actions).
 
 ## GraphQL
-- **GraphQL Inspector** / **graphql-schema-linter** — schema diffing and
-  breaking-change detection against the previous schema.
+- **GraphQL Inspector** — schema diffing and breaking-change detection against
+  the previous schema; feed it real operations/usage to tell a "breaking" change
+  nobody uses from one that breaks clients.
+- **Pact** GraphQL interactions (`GraphQLInteraction` / `ApolloGraphQLInteraction`)
+  when consumers are known and you want consumer-driven coverage.
 - Apollo **Rover** + schema checks if using a registry/federation.
 
 ## Async / event-driven

@@ -114,19 +114,35 @@ function rewriteSiblingLinks(text, skillName, siblings) {
   return out;
 }
 
-// Agents reference skill files by their Claude Code path (.claude/skills/<skill>/x.md).
-// Other tools keep those files elsewhere (see copySiblings), so repoint the prefix.
-function readAgent(objective, agentFile, skillsPrefix) {
+// Agents name skill files location-neutrally ("the `x.md` file in the `<skill>`
+// skill's directory") because Claude Code resolves that from the preloaded
+// skill's base directory, both for .claude/skills/ and for a plugin cache.
+// Other tools have no skill directory, so turn the phrase into a real path to
+// where copySiblings put the file.
+// "(preloaded)" is also Claude-only: say where the skill text actually is.
+const SKILL_FILE_REF = /(?:the )?`([^`]+)` file in the `([^`]+)` skill's directory/g;
+function readAgent(objective, agentFile, skillsPrefix, skillWhere) {
   const { data, body } = parseFrontmatter(readFileSync(join(objective.dir, 'agents', agentFile), 'utf8'));
-  return { data, body: body.split('.claude/skills/').join(skillsPrefix) };
+  return {
+    data,
+    body: body
+      .replace(SKILL_FILE_REF, (_, file, skill) => `\`${skillsPrefix}${skill}/${file}\``)
+      .replace(/ skill \(preloaded\)/g, ` skill (${skillWhere})`),
+  };
 }
+
+// Agent sources preload `<plugin>:<skill>` so a plugin agent gets its own
+// plugin's skill even when a same-named project or user skill exists. Outside
+// a plugin there is no namespace, so installs use the bare skill name.
+const bareSkillName = (n) => n.split(':').pop();
+const bareSkillsField = (md) => md.replace(/^skills:.*$/m, (line) => line.replace(/[A-Za-z0-9_-]+:(?=[A-Za-z0-9_-])/g, ''));
 
 // Claude Code preloads `skills:` frontmatter. Cursor and Windsurf drop that
 // field and write the agent as its own rule, so the SKILL.md guardrails never
 // arrive unless they are inlined here. Sibling links are rewritten the same
 // way as the standalone skill rule, which lives in the same rules directory.
 function withSkillGuardrails(objective, data, body) {
-  const names = String(data.skills || '').split(/[,\s]+/).filter(Boolean);
+  const names = String(data.skills || '').split(/[,\s]+/).filter(Boolean).map(bareSkillName);
   if (!names.length) return body;
   const parts = [body.trim()];
   for (const skillName of names) {
@@ -166,7 +182,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const src = join(objective.dir, 'agents', agentFile);
-      ensureWrite(ctx, join(ctx.cwd, '.claude', 'agents', agentFile), readFileSync(src, 'utf8'));
+      ensureWrite(ctx, join(ctx.cwd, '.claude', 'agents', agentFile), bareSkillsField(readFileSync(src, 'utf8')));
     },
     mcp(ctx, objective, mcpFile) {
       const name = basename(mcpFile, '.json');
@@ -187,7 +203,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = readAgent(objective, agentFile, '');
+      const { data, body } = readAgent(objective, agentFile, '', 'included below');
       ensureWrite(ctx, join(ctx.cwd, '.cursor', 'rules', `${name}.mdc`),
         toMdc(data, withSkillGuardrails(objective, data, body)));
     },
@@ -211,7 +227,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = readAgent(objective, agentFile, '');
+      const { data, body } = readAgent(objective, agentFile, '', 'included below');
       const full = withSkillGuardrails(objective, data, body);
       const md = `# ${data.name || name}\n\n${data.description || ''}\n\n${full.trim()}\n`;
       ensureWrite(ctx, join(ctx.cwd, '.windsurf', 'rules', `${name}.md`), md);
@@ -238,7 +254,7 @@ const adapters = {
     },
     agent(ctx, objective, agentFile) {
       const name = basename(agentFile, '.md');
-      const { data, body } = readAgent(objective, agentFile, '.qa-ai/');
+      const { data, body } = readAgent(objective, agentFile, '.qa-ai/', 'its own section in this file');
       appendAgentsMd(ctx, data.name || name, data.description, body);
     },
     mcp(ctx, objective, mcpFile) {

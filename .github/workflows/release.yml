@@ -31,6 +31,15 @@ jobs:
           node bin/qa-ai.js --version
           node bin/qa-ai.js list
 
+      # The repo doubles as a Claude Code plugin marketplace. Fail the release
+      # if the generated manifests are stale or the CLI reports any warning.
+      - name: Validate Claude Code plugins
+        run: |
+          npm test
+          npm i -g @anthropic-ai/claude-code
+          claude plugin validate --strict .
+          for d in */.claude-plugin; do claude plugin validate --strict "${d%/.claude-plugin}"; done
+
       - name: Skip if version already published
         id: check
         run: |

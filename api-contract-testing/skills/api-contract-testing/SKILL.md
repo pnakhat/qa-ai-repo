@@ -16,6 +16,7 @@ changes at the boundary — the highest-value, lowest-cost API tests.
 | You own the consumers; internal microservices | **Consumer-driven (Pact)** — each consumer declares exactly what it needs; provider verifies against all of them |
 | Public API, many/unknown consumers, a spec is the source of truth | **Spec-first (OpenAPI/AsyncAPI)** — validate real traffic conforms to the spec in both directions |
 | You publish a spec *and* have known internal consumers | **Both** — spec-first for the public surface, Pact for the internal consumers |
+| Consumers you own, but the provider can't/won't run Pact verification (third party, other org) | **Bi-directional (PactFlow)** — consumer pact compared statically against the provider's *tested* OpenAPI spec |
 | Event/message boundary (Kafka, AMQP, WebSocket) | **Message pacts** (consumer-driven) or **AsyncAPI** (spec-first) |
 | GraphQL | Schema-diff breaking-change detection (GraphQL Inspector / Rover checks) |
 
@@ -28,10 +29,16 @@ when you can't enumerate consumers. See `tooling.md` for the tool matrix.
 1. **Consumer test**: write an interaction (request → expected response) against
    a Pact mock; run the consumer's real client code against it. This generates a
    pact file — assert on *shape/types*, not exact values (use matchers).
-2. **Publish** the pact (with consumer version + git sha + branch/tag) to a
-   Pact Broker / PactFlow.
+   **New tests use the V4 API**: `Pact` (an alias of `PactV4`) and `Matchers` from
+   `@pact-foundation/pact`, never `PactV3`/`MatchersV3` (or `MessageConsumerPact`
+   for events). Use the V3 classes only when extending an existing V3 suite.
+2. **Publish** the pact (consumer version = git sha, plus `--branch`) to a
+   Pact Broker / PactFlow. Branches + environments replace the legacy tags.
 3. **Provider verification**: the provider replays every consumer interaction
-   against its real implementation, using provider states to set up data.
+   against its real implementation, using provider states to set up data. A
+   broker webhook (`contract_requiring_verification_published`) runs it as soon
+   as a pact changes; **pending** pacts and **WIP** pacts let a new consumer
+   expectation be verified without breaking the provider's main build.
 4. **`can-i-deploy`**: before releasing either side, query the broker to confirm
    the version is compatible with everything it will meet in the target env.
    Block the deploy if not.
@@ -40,11 +47,19 @@ when you can't enumerate consumers. See `tooling.md` for the tool matrix.
 
 1. Treat the **OpenAPI/AsyncAPI** spec as the contract; lint it (Spectral) in CI.
 2. **Provider side**: assert responses conform to the spec — property-based
-   fuzzing (Schemathesis) or replaying the spec's examples (Dredd).
+   fuzzing with Schemathesis (`--phases examples` replays the spec's own
+   examples; Dredd, the old tool for that, was archived in 2024). Never fuzz
+   production — it sends invalid and destructive requests.
 3. **Consumer side**: run against a spec-driven **mock** (Prism) so consumers
    develop against the contract, not a live service.
 4. **Detect breaking changes**: diff the spec against the last released version
-   (e.g. `oasdiff`) and fail CI on backward-incompatible changes.
+   (e.g. `oasdiff breaking --fail-on ERR`) and fail CI on backward-incompatible
+   changes. Remove things through deprecation (`deprecated: true` + `x-sunset`),
+   not in one step.
+
+A spec only works as a contract if it is the *real* interface: generate it from
+code (or code from it) and fail CI when they drift. A hand-maintained spec that
+nobody checks against the implementation is fiction.
 
 ## Matchers — assert on shape, not data
 
@@ -64,8 +79,14 @@ usage in a consumer test.
 
 ## Principles
 
-- **Contract ≠ end-to-end.** Verify the interface shape and semantics, not full
-  business flows. Keep each interaction small and deterministic.
+- **Contract ≠ end-to-end, and ≠ provider functional test.** Verify the
+  interface shape and semantics, not full business flows or provider business
+  rules (those belong in the provider's own tests). Keep each interaction small
+  and deterministic.
+- **Contract only what the consumer uses** (tolerant reader). A pact listing
+  fields the client never reads blocks the provider from evolving for no reason.
+- **Cover the error responses the client handles** (404/400/401/409), not just
+  the happy path — a changed error shape breaks clients too.
 - **Match on type/shape, not brittle exact values** (except enums/status codes
   that are genuinely part of the contract).
 - **Version everything** — pacts and specs are tied to a service version + sha,
@@ -74,9 +95,39 @@ usage in a consumer test.
 - **Backward compatibility is the rule**: additive changes are safe; removing a
   field, tightening a type, or changing status codes is breaking — version it.
 - **Provider states** replace shared fixtures — each interaction declares the
-  state it needs; keep them cheap and isolated.
+  state it needs; keep them cheap and isolated (rules below).
 - **Gate deploys**, don't just report. A contract test that doesn't block a bad
   release is documentation, not a test.
+
+## Test data: setup and teardown
+
+Contract runs touch real provider data in two places: provider-state handlers and
+spec fuzzing. Code in `reference.md` (provider verification; Schemathesis).
+
+- **Consumer side holds no data.** The Pact mock serves the interaction; nothing
+  to seed or clean. Don't point consumer tests at a real provider "to be safe".
+- **Each provider state sets up exactly its data and tears it down.** Use the
+  handler's `setup` *and* `teardown` (Pact calls teardown after each interaction,
+  pass or fail). Track the ids the setup created and delete those; a state must
+  never depend on what an earlier interaction left behind.
+- **Verify against an isolated provider DB** — Testcontainers, an in-memory
+  store, or a per-run schema owned by the verification. Because examples carry
+  fixed ids (`given('an order exists', { id: 42 })`), a shared DB would collide
+  across parallel builds; an isolated one makes those ids safe.
+- **Schemathesis runs against throwaway data.** It creates, mutates, and deletes
+  records with generated inputs: start the provider with a fresh DB per run
+  (`docker compose -p <run-id> up`), point it at a test tenant/credentials, and
+  drop the whole stack afterwards (`down -v`, in an always-run step). Never at
+  shared staging data or production.
+- **Idempotent state setup** (upsert, not insert-and-hope) so a re-run or a
+  retried interaction doesn't fail on a duplicate key; if a shared per-team
+  environment is unavoidable, prefix created data with the run id and sweep it by
+  age.
+- **Guard by environment**: state handlers and fuzz runs refuse to start unless
+  the target DB/URL is on a test allowlist.
+- **Prove it**: verification passes twice in a row against the same DB, a single
+  interaction verifies alone (`PACT_DESCRIPTION="<description>"`), and the DB is
+  empty of state data afterwards.
 
 ## Anti-patterns — smells to reject
 
@@ -88,9 +139,19 @@ usage in a consumer test.
 | Deploy pipeline that publishes pacts but never gates | `can-i-deploy --to-environment <env>` as a blocking step |
 | Tightening a field / making it required and shipping quietly | That's a **breaking change** — bump the version, run `oasdiff breaking` |
 | Removing a field consumers use, trusting nobody noticed | Provider verification against published pacts catches it — run it |
+| New consumer test written with `PactV3` / `MatchersV3` (pact file says spec `3.0.0`) | `Pact` (= `PactV4`) + `Matchers`; V3 only to extend an existing V3 suite |
 | Shared global fixture the whole suite mutates | Per-interaction **provider states** (`given(...)` → state handler) |
+| Provider state with `setup` only, so data piles up and later interactions see it | `setup` + `teardown` per state, deleting the ids the setup created |
+| Provider state that only works if an earlier interaction ran first | Each state seeds everything its interaction needs |
+| Provider verification against a shared staging DB | Testcontainers / per-run schema owned by the verification |
+| Relying on a DB reset script that CI never runs | Teardown in the state handler; a disposable DB per run |
 | Consumer test asserting on the Pact mock's own response | Drive your **real client code**; assert on what the client parsed |
 | Provider verifies only local pact files | Pull from the broker with `consumerVersionSelectors` (main + deployed) |
+| A new consumer pact turns the provider's main build red | `enablePending: true` (+ `includeWipPactsSince`) so un-verified pacts report without failing |
+| Provider verification stubs the provider's own controllers/repositories | Run the real provider code; stub only its *downstream* dependencies |
+| Pact used to test a public API with unknown consumers | Spec-first (OpenAPI + Schemathesis + oasdiff) — Pact needs known consumers |
+| Pipelines built on `--tag` / `latest` selectors | Use `--branch`, `record-deployment`/`record-release` and environment selectors |
+| Schemathesis or any fuzzer pointed at production | Run against an ephemeral or test environment with test credentials |
 | Spec lint / breaking-change diff not in CI | `spectral lint` + `oasdiff breaking` on every PR, failing on `ERR` |
 | `can-i-deploy` result recorded but deploy proceeds anyway | Non-zero exit must **block** the pipeline, not warn |
 | No `record-deployment` after release | Record it so later `can-i-deploy` knows what's actually live |
@@ -103,8 +164,9 @@ blocks the deploy. Full runnable workflow in `reference.md`.
 - **Consumer PR** → run consumer tests → publish pact tagged with branch + sha.
 - **Provider PR** → verify against broker pacts (`mainBranch` + `deployedOrReleased`
   selectors) → publish verification results.
-- **Pre-deploy** → `can-i-deploy --to-environment <env>` (Pact) and/or `oasdiff
-  breaking` + `spectral lint` (spec-first) as **blocking** gates.
+- **Pre-deploy** → `can-i-deploy --to-environment <env> --retry-while-unknown`
+  (Pact) and/or `oasdiff breaking` + `spectral lint` (spec-first) as
+  **blocking** gates.
 - **Post-deploy** → `record-deployment` so future compatibility checks know
   what's live in each environment.
 - **Nightly** → verify all consumers against provider `main` to catch drift early.
@@ -117,6 +179,7 @@ blocks the deploy. Full runnable workflow in `reference.md`.
       --pacticipant web-checkout \
       --version "${{ github.sha }}" \
       --to-environment production \
+      --retry-while-unknown 30 --retry-interval 10 \
       --broker-base-url "$PACT_BROKER_BASE_URL" \
       --broker-token "$PACT_BROKER_TOKEN"
 ```
@@ -124,8 +187,8 @@ blocks the deploy. Full runnable workflow in `reference.md`.
 ## Reference
 
 See `reference.md` for: a full Pact consumer test with matchers, provider
-verification with provider states, publish + `can-i-deploy` + `record-deployment`
-commands, a spec-first path (Spectral / Schemathesis / oasdiff), message-pact and
+verification with provider states and pending/WIP pacts, publish + `can-i-deploy` +
+`record-deployment` commands, bi-directional contracts, a spec-first path (Spectral / Schemathesis / oasdiff), message-pact and
 AsyncAPI event snippets, and a complete GitHub Actions workflow wiring the gates.
 See `tooling.md` for language-specific tools and when to use each.
 

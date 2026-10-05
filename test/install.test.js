@@ -72,6 +72,59 @@ test('cursor and windsurf agents inline the skill guardrails skills: would prelo
   assert.ok(!claudeAgent.includes(marker), 'claude keeps skills: preload and must not inline SKILL.md');
 });
 
+test('agent skill-file references resolve in every install route', () => {
+  // Agent sources say "the `x.md` file in the `<skill>` skill's directory" so the
+  // same text works from .claude/skills/ and from a plugin cache. Cursor,
+  // Windsurf, and AGENTS.md get a concrete path to the copied sibling instead.
+  const cwd = fresh();
+  for (const name of listObjectives().map((o) => o.name)) {
+    install(loadObjective(name), ['cursor', 'windsurf', 'agents'], { cwd, log() {} });
+  }
+  const rules = [
+    ...readdirSync(join(cwd, '.cursor', 'rules')).filter((f) => f.endsWith('.mdc')).map((f) => join(cwd, '.cursor', 'rules', f)),
+    ...readdirSync(join(cwd, '.windsurf', 'rules')).filter((f) => f.endsWith('.md')).map((f) => join(cwd, '.windsurf', 'rules', f)),
+  ];
+  for (const f of rules) {
+    const text = readFileSync(f, 'utf8');
+    assert.ok(!text.includes("skill's directory"), `${f} kept the plugin-only phrasing`);
+    assert.ok(!text.includes('.claude/skills/'), `${f} points at a Claude-only path`);
+    assert.deepEqual(deadLinks(f, dirname(f)), [], `dead link in ${f}`);
+  }
+  const cursorAgent = readFileSync(join(cwd, '.cursor', 'rules', 'qa-e2e-author.mdc'), 'utf8');
+  assert.match(cursorAgent, /`playwright-e2e\/reference\.md`/);
+  const agentsMd = readFileSync(join(cwd, 'AGENTS.md'), 'utf8');
+  assert.match(agentsMd, /`\.qa-ai\/playwright-e2e\/reference\.md`/);
+  assert.deepEqual(deadLinks(join(cwd, 'AGENTS.md'), cwd), []);
+
+  // Claude Code installs keep the location-neutral wording verbatim.
+  install(loadObjective('playwright-e2e'), ['claude'], { cwd, log() {} });
+  const claudeAgent = readFileSync(join(cwd, '.claude', 'agents', 'qa-e2e-author.md'), 'utf8');
+  assert.match(claudeAgent, /the `reference\.md` file in the `playwright-e2e` skill's directory/);
+});
+
+test('agents preload their plugin-namespaced skill; npx Claude installs get the bare name', () => {
+  // A plugin agent's bare `skills: x` exact-matches a same-named project/user
+  // skill before its own plugin's, so sources say `<objective>:<skill>`.
+  // .claude/skills/ has no namespace, so the installer strips it.
+  for (const o of listObjectives()) {
+    for (const agentFile of o.contents.agents) {
+      const src = readFileSync(join(o.dir, 'agents', agentFile), 'utf8');
+      const line = src.match(/^skills:\s*(.*)$/m);
+      if (!line) continue;
+      for (const s of line[1].split(/[,\s]+/).filter(Boolean)) {
+        const [plugin, skill] = s.split(':');
+        assert.equal(plugin, o.name, `${o.name}/${agentFile}: skills entry "${s}" must be <objective>:<skill>`);
+        assert.ok(existsSync(join(o.dir, 'skills', skill, 'SKILL.md')), `${o.name}/${agentFile}: no skill "${skill}"`);
+      }
+    }
+  }
+  const cwd = fresh();
+  install(loadObjective('playwright-e2e'), ['claude'], { cwd, log() {} });
+  const claudeAgent = readFileSync(join(cwd, '.claude', 'agents', 'qa-e2e-author.md'), 'utf8');
+  assert.match(claudeAgent, /^skills: playwright-e2e$/m);
+  assert.ok(existsSync(join(cwd, '.claude', 'skills', 'playwright-e2e', 'SKILL.md')));
+});
+
 test('an agent that is told to use an MCP server does not restrict its tools', () => {
   // An explicit `tools:` allowlist in agent frontmatter excludes mcp__* tools,
   // which silently disables the MCP server the same objective installs.
@@ -102,4 +155,38 @@ test('the playwright setup project is discoverable from the documented layout', 
   const setupLine = ref.split('\n').find((l) => l.includes("name: 'setup'"));
   assert.ok(setupLine, 'reference.md documents a setup project');
   assert.match(setupLine, /testDir:/, 'setup project must override testDir');
+});
+
+test('non-Claude installs carry no Claude-only wording and no dead sibling links', () => {
+  // Cursor, Windsurf and AGENTS.md have no skills: preload and no SKILL.md file:
+  // the skill is inlined (rules) or a section of AGENTS.md. Sibling files copied
+  // next to the rules must only point at files that were copied with them.
+  const cwd = fresh();
+  for (const name of listObjectives().map((o) => o.name)) {
+    install(loadObjective(name), ['cursor', 'windsurf', 'agents'], { cwd, log() {} });
+  }
+  const walk = (d) => readdirSync(d, { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+  const files = [
+    ...walk(join(cwd, '.cursor', 'rules')),
+    ...walk(join(cwd, '.windsurf', 'rules')),
+    ...walk(join(cwd, '.qa-ai')),
+    join(cwd, 'AGENTS.md'),
+  ].filter((f) => /\.mdc?$/.test(f));
+
+  for (const f of files) {
+    const text = readFileSync(f, 'utf8');
+    assert.ok(!text.includes('(preloaded)'), `${f} says the skill is preloaded`);
+    assert.ok(!text.includes('SKILL.md'), `${f} points at SKILL.md, which is not installed here`);
+    // Bare `x.md` in a sibling file resolves next to it. ALL-CAPS names are
+    // reports the agents write (UI-TEST-AUDIT.md), not shipped files.
+    if (dirname(f) === join(cwd, '.cursor', 'rules') || dirname(f) === join(cwd, '.windsurf', 'rules') || f.endsWith('AGENTS.md')) continue;
+    const bare = [...text.matchAll(/`([A-Za-z0-9_.-]+\.md)`/g)].map((m) => m[1])
+      .filter((r) => !/^[A-Z0-9-]+\.md$/.test(r) && !existsSync(join(dirname(f), r)));
+    assert.deepEqual(bare, [], `dead sibling link in ${f}`);
+  }
+  const cursorAgent = readFileSync(join(cwd, '.cursor', 'rules', 'qa-e2e-author.mdc'), 'utf8');
+  assert.match(cursorAgent, /`playwright-e2e` skill \(included below\)/);
+  const agentsMd = readFileSync(join(cwd, 'AGENTS.md'), 'utf8');
+  assert.match(agentsMd, /`playwright-e2e` skill \(its own section in this file\)/);
 });

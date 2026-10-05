@@ -6,8 +6,10 @@
 
 ```js
 module.exports = {
-  collectCoverage: true,
-  coverageProvider: 'v8',            // fast; use 'babel' if you need full babel semantics
+  // Don't set collectCoverage: true here — it slows every watch/Stryker run.
+  // Turn coverage on with `jest --coverage` instead.
+  coverageProvider: 'v8',            // default is 'babel'; v8 is faster and needs no instrumentation.
+                                     // Stay on 'babel' if you rely on /* istanbul ignore */ semantics.
   collectCoverageFrom: [
     'src/**/*.{js,ts}',
     '!src/**/*.d.ts',
@@ -31,44 +33,110 @@ open coverage/lcov-report/index.html
 
 Read **branch** coverage more than line coverage — uncovered branches are where
 logic hides. `collectCoverageFrom` matters: without it, files with *no* tests are
-invisible in the report.
+invisible in the report. A threshold value can also be negative — `lines: -10`
+means "at most 10 uncovered lines" — handy for ratcheting a legacy directory.
+
+## Test isolation — mocks, timers, env, temp files
+
+`jest.config.js` additions:
+
+```js
+module.exports = {
+  clearMocks: true,     // wipe call history of every mock before each test
+  restoreMocks: true,   // put jest.spyOn originals back before each test
+  // resetModules: true // only if module-level singletons leak; slows the suite
+};
+```
+
+Per-test setup and teardown that runs even when the test fails:
+
+```js
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { exportReport } = require('../src/report');
+
+let dir;
+const savedEnv = { ...process.env };
+
+beforeEach(() => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'report-'));   // unique per test and worker
+  jest.useFakeTimers({ now: new Date('2026-01-15T10:00:00Z') });
+});
+
+afterEach(() => {
+  jest.useRealTimers();                                    // no fake clock leaks into the next test
+  process.env = { ...savedEnv };                           // undo env changes
+  fs.rmSync(dir, { recursive: true, force: true });        // delete exactly what this test made
+});
+
+test('writes a dated report file', () => {
+  process.env.REPORT_FORMAT = 'csv';
+  const file = exportReport({ rows: [{ sku: 'A', qty: 1 }] }, dir);
+  expect(path.basename(file)).toBe('report-2026-01-15.csv');
+});
+```
+
+Check order independence before trusting a mutation run:
+
+```bash
+npx jest --randomize                 # prints the seed; run twice
+npx jest --randomize --seed=1234     # replay a failing order
+npx jest --runInBand                 # compare against the parallel run
+npx jest --detectOpenHandles         # handles a test forgot to close
+```
 
 ## Stryker mutation testing (StrykerJS)
 
-Install:
+Install (StrykerJS 10 needs Node.js ≥ 22; pin v9 on Node 20):
 ```bash
 npm i -D @stryker-mutator/core @stryker-mutator/jest-runner
-# TypeScript projects also benefit from the type-checker to discard invalid mutants:
+# TypeScript projects: add the checker so type-invalid mutants are discarded up front
 npm i -D @stryker-mutator/typescript-checker
+npx stryker init                      # optional interactive scaffold
 ```
 
-`stryker.conf.json`:
+`stryker.config.json` (Stryker also finds `stryker.conf.{json,js,mjs,cjs}`):
 ```json
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "packageManager": "npm",
   "testRunner": "jest",
-  "jest": { "projectType": "custom", "configFile": "jest.config.js" },
+  "jest": { "projectType": "custom", "configFile": "jest.config.js", "enableFindRelatedTests": true },
   "coverageAnalysis": "perTest",
-  "mutate": ["src/**/*.{js,ts}", "!src/**/*.spec.*", "!src/**/*.test.*"],
-  "reporters": ["html", "clear-text", "progress"],
+  "checkers": ["typescript"],
+  "tsconfigFile": "tsconfig.json",
+  "mutate": ["src/**/*.{js,ts}", "!src/**/*.spec.*", "!src/**/*.test.*", "!src/**/*.d.ts"],
+  "reporters": ["html", "clear-text", "progress", "json"],
   "thresholds": { "high": 85, "low": 70, "break": 60 },
-  "concurrency": 4,
-  "incremental": true
+  "incremental": true,
+  "ignoreStatic": false
 }
 ```
+Drop `checkers`/`tsconfigFile` for plain JS. `concurrency` defaults to
+cores−1 (or all cores when ≤ 4) and accepts `"50%"`.
 
 Run:
 ```bash
-npx stryker run                       # full run; writes reports/mutation/mutation.html
-npx stryker run --since=main          # only mutate code changed vs main (PRs)
-npx stryker run --incremental         # reuse prior results, re-test only changes
+npx stryker run                                   # full scope; writes reports/mutation/mutation.html
+npx stryker run --incremental                     # reuse reports/stryker-incremental.json
+npx stryker run --incremental --force             # re-test everything but refresh the incremental file
+npx stryker run --mutate src/pricing.ts:10-40     # one file / line range while killing survivors
+
+# PR: mutate only files changed vs the base branch (there is no --since flag)
+CHANGED=$(git diff --name-only --diff-filter=AM origin/main...HEAD -- 'src/*.ts' 'src/*.js' \
+  | grep -vE '\.(test|spec)\.' | paste -sd, -)
+if [ -n "$CHANGED" ]; then npx stryker run --incremental --mutate "$CHANGED"; else echo "no source changes to mutate"; fi
 ```
 
-- `coverageAnalysis: "perTest"` is the fast path — Stryker only runs the tests
-  that covered each mutant.
+- `coverageAnalysis: "perTest"` (the default) is the fast path — Stryker only
+  runs the tests that covered each mutant.
 - `thresholds.break` fails the command (exit non-zero) below that mutation score
-  → use it as the CI gate.
+  → use it as the CI gate. Its default is `null` (never fails), so a config
+  without `break` gates nothing.
+- `high`/`low` only colour the report (green ≥ high, red < low).
+- `"dashboard"` reporter (+ `STRYKER_DASHBOARD_API_KEY`) publishes reports and a
+  badge to dashboard.stryker-mutator.io for trend tracking — optional.
 - Open `reports/mutation/mutation.html` to see, per file/line, exactly which
   mutants **survived** and what change they represent.
 
@@ -79,12 +147,24 @@ npx stryker run --incremental         # reuse prior results, re-test only change
 | `Killed` | A test failed when the mutant was applied | Nothing — the suite catches this bug |
 | `Survived` | Mutant applied, all tests still passed | **Strengthen a test** to assert the affected behavior |
 | `NoCoverage` | Mutated code was never executed by any test | Add a test that exercises the path, then re-check |
-| `Timeout` | Mutant caused a hang; Stryker aborted the run | Counts as killed — no action |
-| `RuntimeError` | Mutant threw before any assertion (invalid mutant) | Ignored in the score — no action |
-| `CompileError` | Mutant failed type-check (TS projects) | Ignored in the score — no action |
+| `Timeout` | Mutant caused a hang; Stryker aborted the run | Counts as detected — no action |
+| `RuntimeError` | Test runner crashed on the mutant (invalid) | Excluded from the score — no action |
+| `CompileError` | Mutant failed type-check (TS projects) | Excluded from the score — no action |
+| `Ignored` | Static (with `ignoreStatic`), ignorer plugin, or `// Stryker disable` | Excluded from the score — each needs a written reason |
 
-Score = `Killed / (Killed + Survived)`. `NoCoverage` is a **coverage** gap, not a
-mutation gap — Jest coverage should have caught it first.
+Mutation score = detected / valid = `(Killed + Timeout) / (Killed + Timeout + Survived + NoCoverage)`.
+Score based on covered code drops `NoCoverage` from the denominator. `NoCoverage`
+is a **coverage** gap Jest coverage should have flagged first — but it still
+counts against the real score.
+
+### Suppressing an equivalent mutant (the only legitimate disable)
+
+```ts
+// Stryker disable next-line EqualityOperator: equivalent — i only ever increments by 1
+for (let i = 0; i < items.length; i++) { /* ... */ }
+```
+Scope: one line, one named mutator, with a reason after the colon. `// Stryker
+disable all` or a file-wide disable is score-gaming.
 
 ## Worked example — survivor → strengthened test
 
@@ -170,35 +250,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0          # Stryker --since needs git history
+          fetch-depth: 0          # the PR git diff needs base-branch history
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22        # StrykerJS 10 requires Node >= 22
           cache: npm
       - run: npm ci
 
       # Always: coverage gate (fails under coverageThreshold)
       - run: npx jest --coverage
 
-      # Cache Stryker's incremental state so PR mutation stays cheap
+      # Cache Stryker's incremental state so PR mutation stays cheap.
+      # Restore from the default branch's latest nightly result.
       - uses: actions/cache@v4
         with:
-          path: |
-            reports/stryker-incremental.json
-            .stryker-tmp
-          key: stryker-${{ github.ref }}-${{ github.sha }}
-          restore-keys: stryker-${{ github.ref }}-
+          path: reports/stryker-incremental.json
+          key: stryker-incremental-${{ github.sha }}
+          restore-keys: stryker-incremental-
 
-      # PR: mutate only changed code vs the base branch
+      # PR: mutate only files changed vs the base branch (StrykerJS has no --since)
       - name: Mutation (PR — changed code only)
         if: github.event_name == 'pull_request'
-        run: npx stryker run --since=origin/${{ github.base_ref }} --incremental
+        run: |
+          CHANGED=$(git diff --name-only --diff-filter=AM origin/${{ github.base_ref }}...HEAD -- 'src/*.ts' 'src/*.js' \
+            | grep -vE '\.(test|spec)\.' | paste -sd, -)
+          if [ -z "$CHANGED" ]; then echo "No source changes to mutate"; exit 0; fi
+          npx stryker run --incremental --mutate "$CHANGED"
 
-      # Nightly: full-scope mutation to catch drift
+      # Nightly: full-scope mutation to catch drift incremental can't see
+      # (deps, env, config, snapshots); --force refreshes the incremental file.
       - name: Mutation (nightly — full scope)
         if: github.event_name == 'schedule'
-        run: npx stryker run
+        run: npx stryker run --incremental --force
 
       - name: Upload mutation report
         if: always()
@@ -209,10 +293,10 @@ jobs:
           retention-days: 14
 ```
 
-- `thresholds.break` in `stryker.conf.json` makes `stryker run` exit non-zero
+- `thresholds.break` in the Stryker config makes `stryker run` exit non-zero
   below the floor → the job fails → merge is blocked. Make both the coverage and
   mutation jobs **required checks**.
-- `fetch-depth: 0` is required for `--since` to diff against the base branch.
+- `fetch-depth: 0` is required for the `git diff` against the base branch.
 - Ratchet `break` (and per-directory `coverageThreshold`) **up** over time; never
   lower a gate to turn a red build green.
 
