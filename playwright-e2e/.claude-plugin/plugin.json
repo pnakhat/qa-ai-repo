@@ -1,7 +1,7 @@
 {
   "name": "playwright-e2e",
   "displayName": "Playwright E2E Testing",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Author and maintain resilient Playwright end-to-end tests using the Page Object Model, fixtures, stable user-facing locators, and web-first assertions. Enforces guardrails against flakiness, brittle selectors, and shared state. Drives Playwright's built-in planner, generator, and healer agents (playwright-test MCP) and refactors their output to project conventions; also includes the live-browser Playwright MCP server.",
   "author": {
     "name": "pnakhat"

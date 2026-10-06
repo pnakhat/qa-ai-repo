@@ -432,18 +432,26 @@ If you re-add the objective instead, use the version you installed
 (`npx qa-ai-repo@<version> add playwright-e2e`): a bare `npx qa-ai-repo` fetches
 whatever npm has published, which can be older than your install.
 
+<!-- claude-code-only -->
 **Plugin installs (Claude Code).** The plugin's servers are namespaced: its
 tools are `mcp__plugin_playwright-e2e_playwright-test__*`, while the agent files
 `init-agents` writes list `mcp__playwright-test__*` in their `tools:`. The
 `.mcp.json` that `init-agents` writes defines a `playwright-test` server with
-the same command; once you approve it (start `claude` and accept the project
-server, or list it in `enabledMcpjsonServers`), Claude Code uses it instead of
-the plugin's duplicate, the tools are exposed as `mcp__playwright-test__*`, and
-the built-in agents get their tools. Check with `claude mcp list`: it should show
-`playwright-test` (connected) and `plugin:playwright-e2e:playwright`, with no
-`plugin:playwright-e2e:playwright-test`. Until that server is approved, the
-built-in agents have no MCP tools: run their phases inline with the plugin's
-tool names instead of delegating.
+the same command; once you approve it, Claude Code uses it instead of the
+plugin's duplicate, the tools are exposed as `mcp__playwright-test__*`, and the
+built-in agents get their tools. **Trust the folder first, then approve:**
+Claude Code ignores project servers in an untrusted folder, even ones listed in
+`enabledMcpjsonServers` (they stay `Pending approval`), so start `claude` in the
+project, accept the trust dialog, then accept the `playwright-test` server (or
+list it in `enabledMcpjsonServers`). Check with `claude mcp list`: it should show
+`playwright-test` connected and no `plugin:playwright-e2e:playwright-test`. The
+`playwright` server appears once: as `plugin:playwright-e2e:playwright`, or, when
+accessibility-testing is also installed, under that plugin's name
+(`plugin:accessibility-testing:playwright`), because Claude Code lists identical
+servers only once. Until `playwright-test` is approved, the built-in agents have
+no MCP tools: run their phases inline with the plugin's tool names instead of
+delegating.
+<!-- /claude-code-only -->
 
 - **Seed** (`tests/seed.spec.ts`): the test every generated test starts from. Import
   the project's fixtures in it so auth state and page objects carry through.

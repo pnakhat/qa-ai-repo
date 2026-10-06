@@ -28,6 +28,10 @@ the `reference.md` file in the `performance-testing` skill's directory; Read the
 4. **Write the scripts** — k6 scripts and Lighthouse budgets with every
    threshold/assert tied to an SLO. Follow the shapes in
    the `reference.md` file in the `performance-testing` skill's directory.
+   For write load (any script that creates accounts, orders or other records),
+   copy the `checkout-data.js` skeleton from that file's *k6 — test data
+   lifecycle* section and adapt its endpoints and payloads. Keep its `setup()`
+   and `teardown()` structure; don't write the data lifecycle from scratch.
 5. **Confirm the environment**, then run. Verify the target is production-like and
    the load generator is isolated with headroom. Run the smoke first, then the real
    test against the steady-state hold window.
@@ -57,3 +61,15 @@ capacity minus headroom) and the identified bottleneck; for soak, state whether
 latency/resources drifted (leak: yes/no) with the early-vs-late comparison. End
 with a clear **pass/fail against each SLO**, the specific threshold that breached
 if any, and the top 2–3 recommended actions. Keep it concise and decision-ready.
+
+Before reporting, re-read each write-load script and confirm in the report, item
+by item, with the line that shows it (fix the script first if any item fails):
+
+- [ ] The run id/prefix is built once, inside `setup()`, and reaches the VUs and
+      `teardown()` only through `data`. No `Date.now()`, random or `__ENV.RUN_ID`
+      fallback at module level.
+- [ ] Every failure path in `setup()` (a failed create, a failed login, a bad
+      response) deletes what was already provisioned before it aborts. No bare
+      `fail()` or `exec.test.abort()` with a partial pool.
+- [ ] Every `teardown()` message that names a prefix uses `data`'s prefix, the
+      one the records actually carry.

@@ -242,17 +242,21 @@ export function teardown(data) {
   // Orders created by VUs never reach teardown (VUs share no memory), so delete them
   // by the run tag; then delete the pool setup() created. Nothing else is touched.
   const q = `clientRefPrefix=${data.prefix}-`;
+  const found = http.get(`${BASE_URL}/api/test-data/orders/count?${q}`, ADMIN);
   const del = http.del(`${BASE_URL}/api/test-data/orders?${q}`, null, ADMIN);
   const left = http.get(`${BASE_URL}/api/test-data/orders/count?${q}`, ADMIN);
   const failedAccounts = deleteAccounts(data.accounts);
-  // A 2xx alone proves nothing (deleting 0 rows succeeds too): require that the run's
-  // orders were found and that none remain. exec.test.fail() fails the run (exit 110).
+  // A 2xx alone proves nothing (deleting 0 rows succeeds too): require that the delete
+  // removed every order the run created and that none remain. A run that created no
+  // orders (every checkout failed) is clean: 0 found, 0 deleted, 0 left, and the
+  // thresholds report the real cause (exit 99). exec.test.fail() fails the run (exit 110).
   const clean = check(null, {
-    'run orders deleted': () => del.status === 200 && del.json('deleted') > 0,
+    'run orders deleted': () => found.status === 200 && del.status === 200
+      && del.json('deleted') === found.json('count'),
     'no run orders left': () => left.status === 200 && left.json('count') === 0,
     'pool deleted': () => failedAccounts === 0,
   });
-  if (!clean) exec.test.fail(`cleanup incomplete for ${data.prefix}: deleted=${del.body} left=${left.body} accountsLeft=${failedAccounts}`);
+  if (!clean) exec.test.fail(`cleanup incomplete for ${data.prefix}: found=${found.body} deleted=${del.body} left=${left.body} accountsLeft=${failedAccounts}`);
 }
 
 function deleteAccounts(accounts) {
@@ -277,8 +281,10 @@ function deleteAccounts(accounts) {
   each VU its own prefix and teardown deletes nothing. Build the prefix in
   `setup()` and pass it through `data`, as above.
 - **Teardown verifies, not just deletes**: a bulk delete returns success for 0
-  rows, so assert the deleted count and that a count by prefix is 0, and fail
-  the run (`exec.test.fail()`, exit 110) when it isn't.
+  rows, so count the run's rows first, assert the delete removed that many and
+  that a count by prefix is then 0, and fail the run (`exec.test.fail()`, exit
+  110) when it isn't. Zero found and zero left is clean: the run created
+  nothing, and the failed thresholds (exit 99) name the real cause.
 - **Sweeper** (scheduled, catches killed runs and aborted setups), accounts as
   well as orders:
   ```sql

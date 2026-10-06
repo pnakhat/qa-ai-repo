@@ -1,7 +1,7 @@
 {
   "name": "playwright-bdd",
   "displayName": "Playwright → BDD Converter",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Convert imperative Playwright tests into BDD: auto-generate Gherkin .feature specs written in business language (not clicks and selectors), and wire the step definitions to Playwright fixtures and page objects using the playwright-bdd runner. Enforces guardrails against UI mechanics leaking into specs — rejecting selectors, URLs, labels, keystrokes, and waits in Gherkin, keeping mechanics in page objects, and requiring one When and one outcome per scenario with generic, parameterized, domain-language steps. Preserves behavior (verified with bddgen && playwright test before deleting the original) while making specs readable by non-engineers, and wires the generated suite into CI with tag filtering and committed behavior docs.",
   "author": {
     "name": "pnakhat"

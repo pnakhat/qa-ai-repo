@@ -41,13 +41,22 @@ running a bare `npx qa-ai-repo add`: it fetches whatever npm has published, whic
 be older than the installed objective. If you must re-add, use the installed version
 (`npx qa-ai-repo@<version> add playwright-e2e`).
 
-**Plugin installs.** The plugin's tools are named `mcp__plugin_playwright-e2e_playwright-test__*`,
+<!-- claude-code-only -->
+**Plugin installs (Claude Code).** The plugin's tools are named `mcp__plugin_playwright-e2e_playwright-test__*`,
 but the built-in agent files list `mcp__playwright-test__*`. They match only once the
 `playwright-test` server from the `.mcp.json` that `init-agents` writes is approved:
-Claude Code then uses it in place of the plugin's identical server. Check with
-`claude mcp list` (`playwright-test` connected, no `plugin:playwright-e2e:playwright-test`);
-if it isn't approved, ask the user to approve it, or run the phases inline with the
-plugin's tool names.
+Claude Code then uses it in place of the plugin's identical server. Approval needs a
+trusted folder: Claude Code ignores project servers (even ones listed in
+`enabledMcpjsonServers`) until the user has accepted the folder's trust dialog, so the
+user starts `claude` in the project, trusts the folder, then approves the server.
+Check with `claude mcp list`: `playwright-test` connected and no
+`plugin:playwright-e2e:playwright-test`. The `playwright` server is listed once,
+as `plugin:playwright-e2e:playwright` or, when another installed plugin (such as
+accessibility-testing) defines the identical server, under that plugin's name. If
+`playwright-test` isn't approved, ask the user to trust the folder and approve it, or
+run the phases inline with the plugin's tool names
+(`mcp__plugin_playwright-e2e_playwright-test__*`).
+<!-- /claude-code-only -->
 
 **How to use them depends on what you can launch:**
 - **The Agent tool lists `playwright-test-planner` / `-generator` / `-healer` as launchable
@@ -55,8 +64,7 @@ plugin's tool names.
   (independent scenarios can run in parallel). Unless the caller told you to run inline.
 - **Otherwise** (no Agent tool, or those types aren't offered): run the phase yourself.
   Read that agent's definition file (where `init-agents` wrote it, above) as the playbook and call the
-  same tools it lists: `mcp__playwright-test__*`, or `mcp__plugin_playwright-e2e_playwright-test__*`
-  under a plugin install without the project server (load them via ToolSearch if deferred).
+  same tools it lists (`mcp__playwright-test__*`; load them via ToolSearch if deferred).
 
 Their output is a draft. The generator writes raw `page.*` calls and the healer may mark
 a test `test.fixme()`; this skill's rules still decide what ships.

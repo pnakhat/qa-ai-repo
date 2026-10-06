@@ -7,3 +7,13 @@
 .DS_Store
 .env
 node_modules/
+
+# Local install artifacts and maintainer-only agents (gitignored; npm ignores
+# .gitignore once .npmignore exists, so repeat them here).
+/.claude/
+/.cursor/
+/.windsurf/
+
+# Repo-only tests and generator
+/test/
+/scripts/
