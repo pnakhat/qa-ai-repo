@@ -7,6 +7,10 @@ description: Author and maintain resilient Playwright end-to-end tests using the
 
 Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
+
 ## Locators — prefer user-facing, avoid brittle selectors
 
 | ✅ Prefer | ❌ Avoid |
@@ -24,22 +28,22 @@ Write end-to-end tests that survive UI churn, stay fast, and catch real bugs.
 
 ## Page Object Model
 
-- One class per page or major component, under `tests/pages/`.
+- Reuse existing Page Objects for repeated workflows. Add a class under `tests/pages/` when it removes meaningful duplication; simple focused specs may use locators directly.
 - Expose **intent-level methods** (`login(user)`, `addToCart(sku)`, `checkout()`), not raw clicks. The spec reads as a user story; the Page Object carries the mechanics.
 - **Return the next Page Object** from navigation methods so flows compose naturally:
   ```ts
   const dashboard = await loginPage.signInAs(user); // returns DashboardPage
   await dashboard.navigateToOrders();
   ```
-- Keep assertions **out of Page Objects** — they belong in the spec or a dedicated expect helper. A Page Object that throws because an element isn't visible is leaking test logic.
+- Keep business-outcome assertions visible in the spec. Reusable component readiness checks may live in helpers or Page Objects when they make the workflow clearer.
 
 ## Waiting — assertions, never sleeps
 
 - Use Playwright's **web-first, auto-retrying assertions**: `await expect(locator).toBeVisible()`, `.toHaveText()`, `.toHaveValue()`, `.toHaveCount()`, `expect(page).toHaveURL()`.
 - **Never assert on a one-shot read**: `expect(await locator.isVisible()).toBe(true)` or `expect(await locator.textContent()).toBe(…)` checks once and does not retry — use the matching web-first matcher instead.
-- **Await every Playwright call.** A missing `await` is a top source of flakes; enforce it with ESLint `@typescript-eslint/no-floating-promises` and run `tsc --noEmit` in CI.
+- **Await asynchronous Playwright actions and assertions.** Locator construction is synchronous. A missing `await` is a top source of flakes; enforce it with ESLint `@typescript-eslint/no-floating-promises` and run `tsc --noEmit` in CI.
 - **Never** call `page.waitForTimeout()` (or sleep via `setTimeout`) — it hard-codes a delay that will be wrong under load or on slow CI, and it's a flakiness factory.
-- For a specific condition without an assertion use `locator.waitFor({ state: 'visible' })` or `page.waitForResponse(/api\/orders/)` with a meaningful condition.
+- For a specific condition without an assertion use `locator.waitFor({ state: 'visible' })`. Register `page.waitForResponse()` before the triggering action, then await the promise; otherwise a fast response can be missed. Match method, URL, and status. Avoid `networkidle` for readiness; assert the application's ready state.
 - Increase `timeout` on a specific assertion for genuinely slow operations; do not increase the global default to mask problems.
 
 ## Structure & isolation
@@ -105,13 +109,13 @@ Non-negotiable for every spec that creates or changes server-side state. Code in
 
 - **Parallelise by worker** (`fullyParallel: true`) and, for large suites, **shard across machines** (`--shard=1/4`) with the `blob` reporter + `npx playwright merge-reports` to rebuild one HTML report.
 - Install only the browsers you run: `npx playwright install --with-deps chromium`. Pin `@playwright/test` and upgrade deliberately (browsers are version-coupled).
-- Run the **full suite on PRs**; run only the `@smoke` tag subset in pre-deploy pipelines for speed.
+- Choose PR and pre-deploy suites from risk and runtime budgets. Keep critical journeys as required checks and run broader regression on an appropriate cadence; report omitted coverage.
 - Store traces and screenshots as **CI artifacts** on failure (`trace: 'on-first-retry'` when retries > 0, else `'retain-on-failure'`); upload with `if: ${{ !cancelled() }}`.
 - **Retries detect flakes, they don't fix them.** A test that fails then passes is reported as *flaky*, not passed. Keep `retries` at 1–2 on CI so a flake doesn't block unrelated PRs, but set `failOnFlakyTests: true` on the trunk/nightly run (or alert on any flaky result) so it can't hide, and never raise retries to make a suite green.
 - `forbidOnly: !!process.env.CI` so a stray `test.only` can't silently shrink the run.
 - Gate merges on E2E status via a **required check**; never merge a PR that leaves the suite red.
 - Run the suite against your **staging URL** before production deploys; use `process.env.BASE_URL` to point the same suite at different environments.
-- **Nightly full-run** against production (read-only journeys): catches drift that PRs miss.
+- Where production monitoring is authorized, use bounded read-only synthetic journeys with test identities and an owner; do not add production traffic merely because E2E tests exist.
 
 ## Accessibility testing
 

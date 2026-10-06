@@ -10,6 +10,10 @@ strategy is only as good as its inputs, so **always gather the intake first**,
 then produce the strategy against a consistent template. Every recommendation
 traces back to a stated input and lands as a measurable gate, not an aspiration.
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
+
 ## How to run
 
 1. **Infer what you can from the codebase first** (languages, frameworks,

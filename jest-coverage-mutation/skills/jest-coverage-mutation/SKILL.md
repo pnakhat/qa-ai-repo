@@ -10,6 +10,10 @@ whether your tests would **catch a bug** in that code. You need both: coverage t
 find untested code, mutation to find *weakly* tested code (executed but not
 asserted). See `reference.md` for config, a worked survivor example, and commands.
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
+
 ## Coverage vs mutation — what each proves
 
 | Question | Coverage answers | Mutation answers |

@@ -9,15 +9,15 @@ Make the UI usable by everyone — keyboard users, screen-reader users, low-visi
 users, people who need reduced motion. Automate what a machine can verify, then
 manually test what it can't. **An axe pass is a floor, not a certificate.**
 
-## Automation catches ~30–40% — the rest is manual
+## Evidence-driven execution
 
-Measured by WCAG success criteria, automated tools can fully decide only about a
-third of them. (Deque's axe data reports ~57% *by issue volume*, because the
-issues automation catches — contrast, missing alt — are the most frequent.)
-Either way, most criteria need a human. The high-value bugs — a keyboard trap, a focus that vanishes, a button that reads
-as "button" with no name — are invisible to a scanner. Split the work honestly.
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
 
-| ✅ Automation catches (cheap, gate it) | ❌ Needs a human (automation can't judge) |
+## Combine automation with interaction and human review
+
+Automated coverage varies by page, state, rule set, and issue distribution; do not assign a universal percentage. Scanners can detect many accessible-name and markup issues. Scripted keyboard tests can verify focus movement and restoration, while people assess whether interaction and announcements are usable. Report these separately.
+
+| ✅ Automation catches (cheap, gate it) | Needs interaction tests and human judgment |
 |----------------------------------------|-------------------------------------------|
 | Missing `alt` attribute on `<img>` | Whether `alt` text is *meaningful* or noise |
 | Color contrast below AA thresholds | Whether focus *order* is logical |

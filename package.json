@@ -12,8 +12,11 @@
   },
   "scripts": {
     "start": "node bin/qa-ai.js",
-    "test": "node --test",
-    "build:plugins": "node scripts/build-plugins.js"
+    "test": "node scripts/test.js",
+    "build:plugins": "node scripts/build-plugins.js",
+    "test:mutations": "node scripts/mutation-smoke.js",
+    "test:runtime": "node scripts/runtime-smoke.js",
+    "test:performance": "node scripts/performance-smoke.js"
   },
   "keywords": [
     "qa",

@@ -12,6 +12,10 @@ journeys reach **end-to-end**. See `layer-test-matrix.md` for the full
 layer × level grid of what to test and which tools to use, and `reference.md`
 for a runnable example test at every level (plus a "push a test down" before/after).
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
+
 ## Method
 
 1. **Map the architecture.** Identify each layer and its technology:

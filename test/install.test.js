@@ -3,9 +3,9 @@
 // the cursor/windsurf/agents adapters rebuild one file from SKILL.md and used to
 // drop every sibling, so `reference.md` resolved to nothing.
 
-import { test } from 'node:test';
+import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,9 @@ import { install } from '../src/install.js';
 import { loadObjective, listObjectives } from '../src/registry.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const fresh = () => mkdtempSync(join(tmpdir(), 'qa-ai-test-'));
+const temporaryDirs = [];
+const fresh = () => { const dir = mkdtempSync(join(tmpdir(), 'qa-ai-test-')); temporaryDirs.push(dir); return dir; };
+afterEach(() => temporaryDirs.splice(0).forEach(dir => rmSync(dir, { recursive: true, force: true })));
 
 // Every `sub/dir/file.md` reference in an installed rule must exist on disk.
 function deadLinks(ruleFile, resolveFrom) {
@@ -24,7 +26,7 @@ function deadLinks(ruleFile, resolveFrom) {
 
 test('cursor install carries skill sibling files and leaves no dead links', () => {
   const cwd = fresh();
-  install(loadObjective('playwright-e2e'), ['cursor'], { cwd, log() {} });
+  install(loadObjective('playwright-e2e'), ['cursor'], { cwd, home: cwd, log() {} });
 
   const rules = join(cwd, '.cursor', 'rules');
   assert.ok(existsSync(join(rules, 'playwright-e2e.mdc')), 'rule written');
@@ -38,7 +40,7 @@ test('cursor install carries skill sibling files and leaves no dead links', () =
 test('siblings are namespaced per skill, so same-named files cannot collide', () => {
   const cwd = fresh();
   const objectives = listObjectives().map((o) => o.name);
-  for (const name of objectives) install(loadObjective(name), ['cursor'], { cwd, log() {} });
+  for (const name of objectives) install(loadObjective(name), ['cursor'], { cwd, home: cwd, log() {} });
 
   const rules = join(cwd, '.cursor', 'rules');
   // More than one objective ships a file called reference.md; a flat copy would
@@ -56,7 +58,7 @@ test('cursor and windsurf agents inline the skill guardrails skills: would prelo
   // Claude Code preloads SKILL.md via skills: frontmatter. These adapters drop
   // that field, so the agent rule has to carry the skill body itself.
   const cwd = fresh();
-  install(loadObjective('jest-coverage-mutation'), ['cursor', 'windsurf', 'claude'], { cwd, log() {} });
+  install(loadObjective('jest-coverage-mutation'), ['cursor', 'windsurf', 'claude'], { cwd, home: cwd, log() {} });
 
   const marker = 'Anti-patterns — smells to reject';
   const cursorAgent = readFileSync(join(cwd, '.cursor', 'rules', 'test-effectiveness-auditor.mdc'), 'utf8');
@@ -78,7 +80,7 @@ test('agent skill-file references resolve in every install route', () => {
   // Windsurf, and AGENTS.md get a concrete path to the copied sibling instead.
   const cwd = fresh();
   for (const name of listObjectives().map((o) => o.name)) {
-    install(loadObjective(name), ['cursor', 'windsurf', 'agents'], { cwd, log() {} });
+    install(loadObjective(name), ['cursor', 'windsurf', 'agents'], { cwd, home: cwd, log() {} });
   }
   const rules = [
     ...readdirSync(join(cwd, '.cursor', 'rules')).filter((f) => f.endsWith('.mdc')).map((f) => join(cwd, '.cursor', 'rules', f)),
@@ -97,7 +99,7 @@ test('agent skill-file references resolve in every install route', () => {
   assert.deepEqual(deadLinks(join(cwd, 'AGENTS.md'), cwd), []);
 
   // Claude Code installs keep the location-neutral wording verbatim.
-  install(loadObjective('playwright-e2e'), ['claude'], { cwd, log() {} });
+  install(loadObjective('playwright-e2e'), ['claude'], { cwd, home: cwd, log() {} });
   const claudeAgent = readFileSync(join(cwd, '.claude', 'agents', 'qa-e2e-author.md'), 'utf8');
   assert.match(claudeAgent, /the `reference\.md` file in the `playwright-e2e` skill's directory/);
 });
@@ -119,7 +121,7 @@ test('agents preload their plugin-namespaced skill; npx Claude installs get the 
     }
   }
   const cwd = fresh();
-  install(loadObjective('playwright-e2e'), ['claude'], { cwd, log() {} });
+  install(loadObjective('playwright-e2e'), ['claude'], { cwd, home: cwd, log() {} });
   const claudeAgent = readFileSync(join(cwd, '.claude', 'agents', 'qa-e2e-author.md'), 'utf8');
   assert.match(claudeAgent, /^skills: playwright-e2e$/m);
   assert.ok(existsSync(join(cwd, '.claude', 'skills', 'playwright-e2e', 'SKILL.md')));
@@ -163,7 +165,7 @@ test('non-Claude installs carry no Claude-only wording and no dead sibling links
   // next to the rules must only point at files that were copied with them.
   const cwd = fresh();
   for (const name of listObjectives().map((o) => o.name)) {
-    install(loadObjective(name), ['cursor', 'windsurf', 'agents'], { cwd, log() {} });
+    install(loadObjective(name), ['cursor', 'windsurf', 'agents'], { cwd, home: cwd, log() {} });
   }
   const walk = (d) => readdirSync(d, { withFileTypes: true })
     .flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
@@ -194,7 +196,7 @@ test('non-Claude installs carry no Claude-only wording and no dead sibling links
   assert.match(agentsMd, /`playwright-e2e` skill \(its own section in this file\)/);
 
   // Claude Code installs keep the Claude-only blocks.
-  install(loadObjective('playwright-e2e'), ['claude'], { cwd, log() {} });
+  install(loadObjective('playwright-e2e'), ['claude'], { cwd, home: cwd, log() {} });
   for (const f of [join(cwd, '.claude', 'agents', 'qa-e2e-author.md'), join(cwd, '.claude', 'skills', 'playwright-e2e', 'reference.md')]) {
     assert.match(readFileSync(f, 'utf8'), /claude mcp list/, `${f} lost its Claude Code-only block`);
   }

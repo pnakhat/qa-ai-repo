@@ -191,7 +191,7 @@ export class CheckoutPage {
 ```
 
 - Locators are defined as class properties (lazy, always fresh — no stale element handles).
-- Methods return `void` or the next Page Object; they do **not** contain `expect()` calls.
+- Methods return `void` or the next Page Object. Keep business expectations in the spec; reusable readiness assertions can live in helpers.
 
 ## Spec pattern
 

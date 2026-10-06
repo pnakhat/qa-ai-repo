@@ -18,6 +18,8 @@ Follow the `accessibility-testing` skill (preloaded) — its rules and guardrail
 Detailed code, config, and commands live in the `reference.md` file in the `accessibility-testing` skill's directory;
 Read them when a step needs them.
 
+Before execution, read the `verification.md` file in the `accessibility-testing` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
 ## Process
 
 1. **Scope the audit.** Identify the key pages, flows, and components to cover

@@ -6,6 +6,7 @@ import {
   existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, readdirSync, statSync,
 } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { homedir } from 'node:os';
 import { KINDS } from './registry.js';
 
@@ -67,8 +68,17 @@ function mergeMcp(ctx, targetPath, serverName, serverDef) {
       throw new Error(`${targetPath} exists but is not valid JSON; fix or remove it first`);
     }
   }
-  config.mcpServers = config.mcpServers || {};
-  const existed = Boolean(config.mcpServers[serverName]);
+  const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!isObject(config) || (config.mcpServers !== undefined && !isObject(config.mcpServers))) {
+    throw new Error(`${targetPath} must contain an object with an mcpServers object`);
+  }
+  config.mcpServers ??= {};
+  const existed = Object.hasOwn(config.mcpServers, serverName);
+  if (existed) {
+    const state = isDeepStrictEqual(config.mcpServers[serverName], serverDef) ? 'already configured' : 'keeping existing definition';
+    ctx.log(`  ${c.dim('skip mcp')}    "${serverName}" — ${state} in ${relForLog(targetPath)}`);
+    return;
+  }
   config.mcpServers[serverName] = serverDef;
 
   const rel = relForLog(targetPath);
@@ -110,6 +120,8 @@ function rewriteSiblingLinks(text, skillName, siblings) {
   for (const f of siblings) {
     out = out.split('`' + f + '`').join('`' + skillName + '/' + f + '`');
     out = out.split('(' + f + ')').join('(' + skillName + '/' + f + ')');
+    out = out.split('(' + f + '/').join('(' + skillName + '/' + f + '/');
+    out = out.split('`' + f + '/').join('`' + skillName + '/' + f + '/');
   }
   return out;
 }
@@ -165,7 +177,7 @@ function copySiblings(ctx, objective, skillName, destDir) {
     const src = join(dir, f);
     const dest = join(destDir, skillName, f);
     if (statSync(src).isDirectory()) copyDir(ctx, src, dest);
-    else ensureWrite(ctx, dest, /\.mdc?$/.test(f) ? stripClaudeOnly(readFileSync(src, 'utf8')) : readFileSync(src, 'utf8'));
+    else ensureWrite(ctx, dest, /\.mdc?$/.test(f) ? stripClaudeOnly(readFileSync(src, 'utf8')) : readFileSync(src));
   }
 }
 
@@ -242,7 +254,7 @@ const adapters = {
       const name = basename(mcpFile, '.json');
       const def = JSON.parse(readFileSync(join(objective.dir, 'mcp', mcpFile), 'utf8'));
       // Windsurf reads a single global MCP config file.
-      mergeMcp(ctx, join(homedir(), '.codeium', 'windsurf', 'mcp_config.json'), name, def);
+      mergeMcp(ctx, join(ctx.home, '.codeium', 'windsurf', 'mcp_config.json'), name, def);
     },
   },
 
@@ -277,7 +289,7 @@ function appendAgentsMd(ctx, name, description, body) {
   const heading = `## ${name}`;
   const section = `${heading}\n\n${description ? description + '\n\n' : ''}${body.trim()}\n`;
   let existing = existsSync(target) ? readFileSync(target, 'utf8') : '# AGENTS.md\n\n';
-  if (existing.includes(heading)) {
+  if (existing.split(/\r?\n/).some(line => line.trimEnd() === heading)) {
     ctx.log(`  ${c.dim('skip')}        AGENTS.md already has "${name}"`);
     return;
   }
@@ -298,8 +310,8 @@ export function detectTools(cwd = process.cwd()) {
 
 // ---- orchestration -------------------------------------------------------
 
-export function install(objective, tools, { dryRun = false, cwd = process.cwd(), log = console.log } = {}) {
-  const ctx = { dryRun, cwd, log };
+export function install(objective, tools, { dryRun = false, cwd = process.cwd(), home = homedir(), log = console.log } = {}) {
+  const ctx = { dryRun, cwd, home, log };
   for (const tool of tools) {
     const adapter = adapters[tool];
     if (!adapter) throw new Error(`unknown tool "${tool}" (known: ${TOOLS.join(', ')})`);

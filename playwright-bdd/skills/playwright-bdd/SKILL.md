@@ -12,6 +12,10 @@ language*, and all the mechanical detail (locators, clicks, waits) lives in step
 definitions and page objects. See `reference.md` for setup/wiring and
 `gherkin-style.md` for the business-language rules.
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
+
 ## The golden rule
 
 **Feature files contain zero UI mechanics.** No `click`, `fill`, selectors, URLs,

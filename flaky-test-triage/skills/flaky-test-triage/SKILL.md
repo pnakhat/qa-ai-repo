@@ -10,23 +10,29 @@ test: it trains the team to ignore red, so real regressions slip through. Treat
 flake as a defect in the test, with a rate you measure, a cause you name, and a
 fix you land — **never** a nuisance you retry away.
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
+
 ## How to run
 
-1. **Confirm it's flake, not a real bug.** Reproduce on the exact commit. If it
-   fails deterministically, it's a bug — route it to the code, not here. And a
+1. **Classify the failure pattern.** Reproduce on the exact commit. A consistent
+   failure can be a product or test defect; investigate the evidence. A
    flake is not automatically a *test* defect: races in the product (double
    submit, unawaited write, non-atomic counter) show up as flaky tests first.
    Rule out a product concurrency bug before "fixing" the test.
 2. **Quantify.** Compute the suite flake rate and a per-test flake score from
    reruns + CI history (formulas below). Rank by score × blast radius.
 3. **Reproduce the non-determinism.** Rerun the suspect many times; shuffle order;
-   vary workers/timezone/seed until it flips. A flake you can't reproduce, you
-   can't fix — keep isolating.
+   vary the axis supported by the evidence within a stated run/time budget.
+   If it does not reproduce, report the evidence limit and next hypothesis.
 4. **Classify** against the taxonomy — match the tell-tale signal to a cause.
 5. **Fix at the root** using the per-cause playbook, *or* **quarantine with an
-   SLA** if the fix can't land now. Never leave it failing in the blocking lane.
-6. **Verify.** Rerun the fixed test ≥ N times green before closing; un-quarantine
-   only after N consecutive green runs.
+   SLA** if the release owner accepts the resulting coverage gap. A critical
+   unresolved product risk may need to keep blocking the release.
+6. **Verify.** Re-run the original reproduction with retries disabled. Report N,
+   failures, conditions, and uncertainty; require root-cause evidence and the agreed
+   observation window before closure or removing quarantine.
 
 ## Taxonomy — cause → tell-tale signal → fix direction
 

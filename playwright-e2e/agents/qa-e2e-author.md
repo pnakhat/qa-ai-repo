@@ -1,6 +1,6 @@
 ---
 name: qa-e2e-author
-description: Use to author or extend Playwright end-to-end tests for a user journey. Give it the flow to cover; it produces Page Object Model specs with stable locators, web-first assertions, fixture-based isolation, and storage-state auth — and runs Playwright's built-in planner → generator → healer agent loop (playwright-test MCP), then refactors the generated code to project conventions.
+description: Use to author or extend Playwright end-to-end tests for a user journey. Give it the flow to cover; it produces Page Object Model specs with stable locators, web-first assertions, fixture-based isolation, and storage-state auth — uses the project runner for focused changes or Playwright's planner → generator → healer loop (playwright-test MCP) for exploratory work, then verifies against project conventions.
 # No `tools:` allowlist on purpose. An explicit list excludes the
 # mcp__playwright__* / mcp__playwright-test__* tools (and the Agent tool used to
 # delegate to Playwright's built-in agents). Omitting the field inherits every
@@ -13,6 +13,12 @@ You are a senior QA automation engineer specializing in Playwright E2E tests.
 Follow the `playwright-e2e` skill (preloaded) — its rules and guardrails are authoritative.
 Detailed code, config, and commands live in the `reference.md` file in the `playwright-e2e` skill's directory;
 Read them when a step needs them.
+
+Before execution, read the `verification.md` file in the `playwright-e2e` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
+## Select the execution mode
+
+For a focused extension, inspect the app, edit the existing spec, and run the project-local runner directly. Use the loop below for exploratory or multi-scenario work when its tools are available. Do not bootstrap agents, MCP, or a new abstraction hierarchy solely to edit a small test. Report which mode ran.
 
 ## Playwright's built-in agents
 
@@ -98,16 +104,16 @@ Known tool quirks:
    only when its path differs from the final spec, and update the plan's `File:` lines to
    the final path.
 5. **Refactor to project conventions.** Per the skill:
-   - Move raw `page.click()` / `page.fill()` into intent-level methods on Page Objects under
-     `tests/pages/` (reuse existing ones first).
+   - Reuse existing intent-level Page Object methods. Introduce a new abstraction only for
+     meaningful repetition; focused specs can retain user-facing locator calls.
    - Import `test`/`expect` from the project's fixtures; one journey per file under `tests/e2e/`.
    - Keep user-facing locators; replace any CSS/XPath the generator fell back to.
    - Keep web-first assertions, no sleeps. Mock only third-party or slow services.
-6. **Heal.** Run the refactored specs with `test_run`; if all pass, healing is done. Run the
+6. **Heal (at most two targeted attempts per failure).** Run the refactored specs with `test_run`; if all pass, healing is done. Run the
    healer on any failing spec (including ones your refactor broke). Then
    review its diff: reject a weakened assertion, an added sleep, or a brittle selector. A
-   `test.fixme()` means the healer thinks the app is broken; keep it only with the reason in
-   your report, never as a silent skip.
+   `test.fixme()` is unresolved coverage, not a repair. Require an owner, issue, expiry,
+   and explicit skipped count; do not report the original requirement as verified.
 7. **Verify under CI conditions.** `npx playwright test <spec> --repeat-each=3` green with no
    `--headed`, `--debug`, or `retries > 0` masking failures. On failure use `--trace on` and
    `npx playwright show-trace`.

@@ -11,6 +11,12 @@ k6 v2 removed: `--no-summary` (use `--summary-mode=disabled`), the
 `k6 cloud run script.js`). Lighthouse 12 removed native `budgets`; use the
 `resource-summary:*` assertions shown below instead.
 
+## Target guard used by the examples
+
+Copy [scripts/safe-target.js](scripts/safe-target.js) to `perf/safe-target.js` beside the k6 scripts below. It accepts explicit HTTP(S) DNS/IPv4 URLs, rejects embedded credentials and ambiguous authorities, and requires an exact allowed host. IPv6 is deliberately unsupported by this small guard; use a tested URL parser if needed. Do not split a URL on colons: `https://staging.example.com:password@production.example.com` contacts production.
+
+Keep `maxRedirects: 0` in the examples and do not override it through request params, CLI flags, or environment. If testing redirects is necessary, validate each destination separately. Host validation does not prevent DNS rebinding and is not a substitute for an isolated load-test network. Validate server-returned absolute URLs before making further requests.
+
 ## Install
 
 ```bash
@@ -25,6 +31,7 @@ npm i -D @lhci/cli                     # Lighthouse CI runner + assertions (uses
 
 ```
 perf/
+  safe-target.js       # copy the shipped, tested target guard beside these scripts
   load.js              # expected-peak load test — the baseline gate (read-only)
   checkout-data.js     # write load: setup() pool, run-id tags, teardown()
   stress.js            # ramp past peak to find the knee
@@ -47,6 +54,7 @@ into this one when the peak mix includes writes.
 ```js
 import http from 'k6/http';
 import exec from 'k6/execution';
+import { assertSafeTarget } from './safe-target.js';
 import { check, sleep, group } from 'k6';
 import { Trend, Rate } from 'k6/metrics';
 
@@ -65,6 +73,7 @@ const businessErrors = new Rate('business_errors');        // logical failures, 
 const VUS = Math.ceil(RATE * 8 * 1.25);
 
 export const options = {
+  maxRedirects: 0, // do not follow a redirect outside the validated target
   // Open model: k6 starts iterations at a target ARRIVAL RATE, independent of how
   // slow the system gets — so a degrading server doesn't silently reduce load
   // (the closed-model "coordinated omission" trap).
@@ -103,8 +112,7 @@ const headers = { Accept: 'application/json' };
 
 export function setup() {
   // Never load a host that isn't on the perf allowlist (k6 has no global URL).
-  const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];
-  if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to load ${host}: not in PERF_SAFE_HOSTS`);
+  assertSafeTarget(BASE_URL, SAFE_HOSTS);
 }
 
 // Read-only journey: it creates nothing, so there is nothing to tear down. For
@@ -175,6 +183,7 @@ skips `teardown()`; the age-based sweeper below catches that.
 ```js
 import http from 'k6/http';
 import exec from 'k6/execution';
+import { assertSafeTarget } from './safe-target.js';
 import { check, sleep } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'https://perf.example.com';
@@ -188,6 +197,7 @@ const ADMIN = {
 };
 
 export const options = {
+  maxRedirects: 0, // do not follow a redirect outside the validated target
   setupTimeout: '2m',                                    // provisioning the pool takes a while
   scenarios: {
     peak: {
@@ -205,8 +215,7 @@ export const options = {
 };
 
 export function setup() {
-  const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];   // k6 has no global URL
-  if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to provision data on ${host}`);
+  assertSafeTarget(BASE_URL, SAFE_HOSTS);
 
   // Init code runs once per VU, so a Date.now() fallback there gives every VU its own
   // prefix. Build it once here and hand it to the VUs and teardown() through `data`.
@@ -306,12 +315,14 @@ so you learn the capacity ceiling and *how* it fails (graceful slope vs cliff).
 ```js
 import http from 'k6/http';
 import exec from 'k6/execution';
+import { assertSafeTarget } from './safe-target.js';
 import { check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'https://staging.example.com';
 const SAFE_HOSTS = (__ENV.PERF_SAFE_HOSTS || 'staging.example.com,localhost').split(',');
 
 export const options = {
+  maxRedirects: 0, // do not follow a redirect outside the validated target
   scenarios: {
     stress: {
       executor: 'ramping-arrival-rate',
@@ -343,8 +354,7 @@ export const options = {
 };
 
 export function setup() {
-  const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];
-  if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to load ${host}: not in PERF_SAFE_HOSTS`);
+  assertSafeTarget(BASE_URL, SAFE_HOSTS);
 }
 
 export default function () {
@@ -370,6 +380,7 @@ upward drift over time means a leak (memory, connections, file descriptors, cach
 ```js
 import http from 'k6/http';
 import exec from 'k6/execution';
+import { assertSafeTarget } from './safe-target.js';
 import { check } from 'k6';
 import { Trend } from 'k6/metrics';
 
@@ -378,6 +389,7 @@ const SAFE_HOSTS = (__ENV.PERF_SAFE_HOSTS || 'staging.example.com,localhost').sp
 const latency = new Trend('req_latency', true);
 
 export const options = {
+  maxRedirects: 0, // do not follow a redirect outside the validated target
   scenarios: {
     soak: {
       executor: 'constant-arrival-rate',
@@ -401,8 +413,7 @@ export const options = {
 };
 
 export function setup() {
-  const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];
-  if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to load ${host}: not in PERF_SAFE_HOSTS`);
+  assertSafeTarget(BASE_URL, SAFE_HOSTS);
 }
 
 export default function () {
@@ -430,12 +441,14 @@ does the system **recover** once the spike passes?
 ```js
 import http from 'k6/http';
 import exec from 'k6/execution';
+import { assertSafeTarget } from './safe-target.js';
 import { check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'https://staging.example.com';
 const SAFE_HOSTS = (__ENV.PERF_SAFE_HOSTS || 'staging.example.com,localhost').split(',');
 
 export const options = {
+  maxRedirects: 0, // do not follow a redirect outside the validated target
   scenarios: {
     spike: {
       executor: 'ramping-arrival-rate',
@@ -456,8 +469,7 @@ export const options = {
 };
 
 export function setup() {
-  const host = BASE_URL.replace(/^\w+:\/\//, '').split(/[:/]/)[0];
-  if (!SAFE_HOSTS.includes(host)) exec.test.abort(`Refusing to load ${host}: not in PERF_SAFE_HOSTS`);
+  assertSafeTarget(BASE_URL, SAFE_HOSTS);
 }
 
 export default function () {

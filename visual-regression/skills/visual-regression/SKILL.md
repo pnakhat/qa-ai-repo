@@ -10,6 +10,10 @@ without a flood of false positives that trains everyone to rubber-stamp diffs.
 A visual test is only trustworthy if the *only* thing that can change a pixel is
 a change to the UI. Get determinism right first; everything else is tuning.
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
+
 ## Determinism first — the #1 cause of flaky visual tests
 
 Every flaky visual test is a determinism bug in disguise. Before you touch a
