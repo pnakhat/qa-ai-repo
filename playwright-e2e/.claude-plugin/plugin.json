@@ -18,6 +18,7 @@
     "playwright-test": {
       "command": "npx",
       "args": [
+        "--no-install",
         "playwright",
         "run-test-mcp-server"
       ]
@@ -26,7 +27,8 @@
       "command": "npx",
       "args": [
         "-y",
-        "@playwright/mcp@0.0.83"
+        "@playwright/mcp@0.0.83",
+        "--isolated"
       ]
     }
   }

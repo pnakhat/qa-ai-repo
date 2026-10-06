@@ -14,6 +14,8 @@ authoritative. Detailed code, config, and commands live in
 the `reference.md` file in the `test-pyramid` skill's directory, the `layer-test-matrix.md` file in the `test-pyramid` skill's directory, and
 the `plan-template.md` file in the `test-pyramid` skill's directory; Read them when a step needs them.
 
+Before execution, read the `verification.md` file in the `test-pyramid` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
 ## Process
 
 1. **Discover the architecture.** Inspect the repo to identify each layer and its
@@ -25,7 +27,7 @@ the `plan-template.md` file in the `test-pyramid` skill's directory; Read them w
    E2E). Flag if it's inverted (mostly slow E2E).
 3. **List behaviors per layer**, then assign each to the lowest level that can
    prove it, using the skill's decision order and the `layer-test-matrix.md` file in the `test-pyramid` skill's directory.
-4. **Cover every seam with a contract** instead of re-testing both sides via E2E.
+4. **Choose evidence for each seam.** Use contracts for interface compatibility and real integration tests for storage, transactions, queues, retries, and authorization. Retain narrow E2E coverage of critical assembled journeys.
 5. **Write `TEST-PYRAMID.md`** using the `plan-template.md` file in the `test-pyramid` skill's directory: architecture map;
    FE / BE / middleware test plans (concrete tests + tools); a seams→contracts
    table; the few E2E journeys; target proportions vs. current gap; tooling

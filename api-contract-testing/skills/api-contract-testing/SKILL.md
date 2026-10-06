@@ -9,6 +9,10 @@ Contract testing verifies that two services **agree on the interface** without
 standing up both in a slow, flaky end-to-end environment. It catches breaking
 changes at the boundary — the highest-value, lowest-cost API tests.
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
+
 ## Pick the approach
 
 | Situation | ✅ Approach |
@@ -92,7 +96,7 @@ usage in a consumer test.
 - **Version everything** — pacts and specs are tied to a service version + sha,
   and no provider verification runs without a `providerVersion`, so
   `can-i-deploy` can reason about environments.
-- **Backward compatibility is the rule**: additive changes are safe; removing a
+- **Check compatibility direction**: added response enum values or required request fields can break consumers. Removing a
   field, tightening a type, or changing status codes is breaking — version it.
 - **Provider states** replace shared fixtures — each interaction declares the
   state it needs; keep them cheap and isolated (rules below).

@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@axe-core/playwright": "4.13.0",
+    "playwright-bdd": "9.2.1"
+  },
+  "name": "qa-browser-fixture"
+}

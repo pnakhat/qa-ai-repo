@@ -14,6 +14,10 @@ same thing. This skill audits the suite and reclassifies each test:
 `reference.md` for concrete before/after conversions and copy-pasteable ripgrep
 inventory commands.
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
+
 ## How to run the audit
 
 1. **Locate the UI tests** regardless of framework/language. Detect Playwright,

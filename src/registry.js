@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = join(__dirname, '..');
 
 const RESERVED = new Set([
-  'bin', 'src', 'node_modules', 'scripts', 'test', 'tests', 'coverage',
+  'bin', 'src', 'node_modules', 'scripts', 'test', 'tests', 'coverage', 'fixtures', 'docs',
 ]);
 
 export const KINDS = ['skills', 'agents', 'mcp'];

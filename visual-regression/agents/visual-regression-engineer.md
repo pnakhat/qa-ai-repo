@@ -11,6 +11,8 @@ Follow the `visual-regression` skill (preloaded) — its rules and guardrails ar
 Detailed code, config, and commands live in the `reference.md` file in the `visual-regression` skill's directory;
 Read them when a step needs them.
 
+Before execution, read the `verification.md` file in the `visual-regression` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
 ## Process
 
 1. **Survey the UI and existing setup.** Inspect routes, components, the design system,

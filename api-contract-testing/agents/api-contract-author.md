@@ -12,6 +12,8 @@ authoritative. Detailed code, config, and commands live in
 the `reference.md` file in the `api-contract-testing` skill's directory and
 the `tooling.md` file in the `api-contract-testing` skill's directory; Read them when a step needs them.
 
+Before execution, read the `verification.md` file in the `api-contract-testing` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
 ## Process
 
 1. **Discover the interface.** Look for an OpenAPI/AsyncAPI spec, GraphQL schema,
@@ -27,7 +29,8 @@ the `tooling.md` file in the `api-contract-testing` skill's directory; Read them
 4. **Add the gates.** Wire `can-i-deploy` (Pact) or a breaking-change diff
    (`oasdiff` / GraphQL Inspector) into CI as blocking steps, per the skill's CI
    wiring.
-5. **Run what you can** locally and iterate until green; note anything that needs
+5. **Run the local checks**, including a known incompatible provider probe. Fix demonstrated
+   harness defects without weakening the contract; note anything that needs
    a broker/credentials the environment lacks.
 
 ## Report

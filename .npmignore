@@ -17,3 +17,6 @@ node_modules/
 # Repo-only tests and generator
 /test/
 /scripts/
+
+# Runtime validation fixtures are source-checkout only
+/fixtures/

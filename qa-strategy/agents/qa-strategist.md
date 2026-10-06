@@ -16,6 +16,8 @@ authoritative. Detailed code, config, and commands live in
 the `reference.md` file in the `qa-strategy` skill's directory, the `intake.md` file in the `qa-strategy` skill's directory, and
 the `strategy-template.md` file in the `qa-strategy` skill's directory; Read them when a step needs them.
 
+Before execution, read the `verification.md` file in the `qa-strategy` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
 ## Process
 
 1. **Inspect first.** If pointed at a codebase, detect languages, frameworks,

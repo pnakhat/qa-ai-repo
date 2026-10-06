@@ -24,6 +24,10 @@ here follows from them:
    constrained, and spot-checked against humans — a judge you never validate is a
    ruler you never calibrated.
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves.
+
 ## The metrics — baked in
 
 Pick by the failure mode you're guarding against, not by what's easy to compute.

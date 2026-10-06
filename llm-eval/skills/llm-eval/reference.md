@@ -56,7 +56,7 @@ pytest evals/
 Useful `deepeval test run` flags: `-x` stop at first failure, `-r N` repeat,
 `-n N` processes, `-c` reuse cached metric results, `-i` ignore metric errors,
 `-s` skip cases missing required params, `-id NAME` label the run, `-d failing`
-print only failing cases.
+print only failing cases. Do not use `-i` or `-s` in a release gate: ignored errors or skipped cases are missing evidence. Compare executed case IDs/counts against the intended dataset.
 
 ---
 

@@ -12,6 +12,10 @@ realistic workload, express the thresholds as gates, run against a production-li
 target, then read the percentiles.** A run with no SLO is a benchmark nobody can
 fail — it decorates a dashboard and changes no decision.
 
+## Evidence-driven execution
+
+Read [verification.md](verification.md) before selecting the workflow or reporting results. It defines domain-specific failure probes, evidence requirements, and limits on what a passing run proves. When generating k6 scripts, copy [scripts/safe-target.js](scripts/safe-target.js) beside them and follow the target guard setup in `reference.md`.
+
 ## SLOs first — the metrics that matter
 
 Decide the target *before* you write a script. Every threshold in the test traces
@@ -76,10 +80,7 @@ uses. Model it from real numbers.
 
   Default to the open model; gate `dropped_iterations` so an under-sized
   generator can't silently deliver less load than the test claims.
-- **Include think time.** Real users read, type, and pause. Put `sleep()` between
-  requests (typically 1–10 s, ideally randomized) so N VUs generate realistic RPS
-  instead of a denial-of-service loop. Zero think time measures a different,
-  fictional system.
+- **Model pacing deliberately.** Arrival-rate executors already pace iterations: do not add a trailing sleep to throttle an API request workload. For a genuine multi-step user session, model pauses between steps and size VUs for the full session duration. Fixed-user workloads generally need realistic think time.
 - **Ramp in stages.** `0 → target` over minutes, **hold at steady state**, then
   ramp down. Never start at full load — you'll measure cold-start artifacts, not
   steady behavior.

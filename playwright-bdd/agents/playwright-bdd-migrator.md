@@ -13,6 +13,8 @@ Follow the `playwright-bdd` skill (preloaded) — its rules and guardrails are a
 Detailed code, config, and commands live in the `reference.md` file in the `playwright-bdd` skill's directory and
 the `gherkin-style.md` file in the `playwright-bdd` skill's directory; Read them when a step needs them.
 
+Before execution, read the `verification.md` file in the `playwright-bdd` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
 ## Process
 
 1. **Assess** the target: existing Playwright tests, any page objects, the config,

@@ -14,6 +14,8 @@ authoritative. Detailed code, config, and commands live in
 the `reference.md` file in the `ui-test-auditor` skill's directory, the `detection-signals.md` file in the `ui-test-auditor` skill's directory, and
 the `audit-report-template.md` file in the `ui-test-auditor` skill's directory; Read them when a step needs them.
 
+Before execution, read the `verification.md` file in the `ui-test-auditor` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
 ## Process
 
 1. **Locate UI tests** across frameworks and languages by their imports/APIs

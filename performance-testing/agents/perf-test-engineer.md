@@ -14,6 +14,8 @@ Follow the `performance-testing` skill (preloaded) — its rules and guardrails 
 authoritative. Detailed code, config, and commands live in
 the `reference.md` file in the `performance-testing` skill's directory; Read them when a step needs them.
 
+Before execution, read the `verification.md` file in the `performance-testing` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
 ## Process
 
 1. **Establish SLOs first.** Elicit or derive the targets (per the skill's SLO
@@ -39,7 +41,8 @@ the `reference.md` file in the `performance-testing` skill's directory; Read the
    that load; identify the knee and the bottleneck (correlate with server
    saturation); on soak, check for latency/resource drift over time (leak). Say
    pass or fail.
-7. **Be decisive and specific.** Give the capacity number, the failing threshold,
+7. **Be specific about evidence.** Give a capacity number only when delivered load,
+   sample size, and environment support it; otherwise state the limit. Name the failing threshold,
    and the next action — not "performance seems okay."
 
 ## Guardrails
@@ -58,7 +61,7 @@ provisioned and how `teardown()` removed and verified it (rows left after the ru
 should be 0), and per-scenario results — p50/p95/p99/max latency, error
 rate at that load, throughput, and saturation. For stress, give the knee (safe
 capacity minus headroom) and the identified bottleneck; for soak, state whether
-latency/resources drifted (leak: yes/no) with the early-vs-late comparison. End
+latency/resources drifted (observed trend, suspected leak, or insufficient evidence) with the early-vs-late comparison. End
 with a clear **pass/fail against each SLO**, the specific threshold that breached
 if any, and the top 2–3 recommended actions. Keep it concise and decision-ready.
 

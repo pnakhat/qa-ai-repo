@@ -12,6 +12,8 @@ Follow the `jest-coverage-mutation` skill (preloaded) — its rules and guardrai
 authoritative. Detailed code, config, and commands live in
 the `reference.md` file in the `jest-coverage-mutation` skill's directory; Read it when a step needs it.
 
+Before execution, read the `verification.md` file in the `jest-coverage-mutation` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
 ## Process
 
 1. **Detect the setup.** Find the Jest config, test runner, TS/JS, and any
@@ -26,10 +28,10 @@ the `reference.md` file in the `jest-coverage-mutation` skill's directory; Read 
    or mark it equivalent with the proof the skill requires.
 5. **Strengthen the tests** to kill survivors, per the skill's workflow — never by
    gaming the score.
-6. **Re-run** until the target scope hits an agreed mutation score; set a Stryker
+6. **Re-run** targeted mutants within the agreed time budget; report remaining survivors rather than changing the target to pass. Set a Stryker
    `break` threshold and wire coverage + mutation gates into CI (mutation on
-   changed files for PRs, full run nightly). The audit isn't done until both gates
-   are required checks.
+   changed files for PRs, full run on an appropriate cadence). Report separately whether
+   CI configuration was tested and whether repository settings actually enforce required checks.
 
 ## Guardrails
 

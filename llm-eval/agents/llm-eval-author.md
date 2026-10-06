@@ -15,6 +15,8 @@ authoritative. Detailed code, config, and commands live in
 the `reference.md` file in the `llm-eval` skill's directory and the `tooling.md` file in the `llm-eval` skill's directory;
 Read them when a step needs them.
 
+Before execution, read the `verification.md` file in the `llm-eval` skill's directory. Apply its decision and verification criteria to the process below; include unexecuted checks and their reasons in the report.
+
 ## Process
 
 1. **Identify the system and the fear.** Determine what's under test — a bare
@@ -35,7 +37,8 @@ Read them when a step needs them.
 5. **Set thresholds from a measured baseline.** Run `evaluate()` first to read the
    score distribution, then gate a margin below baseline. Get each metric's
    **direction** right.
-6. **Run and iterate** until green (or until a genuine quality gap is documented).
+6. **Run within a stated case/token/cost budget.** Preserve held-out labels and thresholds;
+   report a quality failure rather than tuning the gate until it is green.
    Note anything needing a judge API key/provider the environment lacks.
 7. **Be decisive.** Report per-metric pass rates, the low-scoring cases with the
    judge's reason, and the specific threshold that breached — not "the model seems

@@ -1,4 +1,4 @@
 {
   "command": "npx",
-  "args": ["playwright", "run-test-mcp-server"]
+  "args": ["--no-install", "playwright", "run-test-mcp-server"]
 }

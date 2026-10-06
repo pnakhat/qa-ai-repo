@@ -301,3 +301,23 @@ a public repo.
 ## License
 
 [MIT](LICENSE)
+
+
+## Evidence-driven quality checks
+
+Each objective now includes a domain-specific verification guide and a five-part scenario matrix. Agents distinguish passed, failed, blocked, and not-run work, and require evidence for claims about compatibility, accessibility, performance, flaky-test repair, and model quality. See [research and design decisions](docs/research-2026-10-06.md).
+
+MCP installation preserves an existing same-name server definition (including custom arguments and environment settings) and logs the conflict. To adopt a changed default, review your existing config against the shipped `mcp/` definition and update it deliberately. Browser MCP uses an isolated profile; it does not persist login between sessions. Profile isolation is not a network or security sandbox. The test-runner MCP uses `npx --no-install`: install the project's compatible `@playwright/test` first instead of implicitly fetching another runner.
+
+Maintainer checks (from a source checkout):
+
+```bash
+npm test                  # offline regression tests; isolated project/home directories
+npm run test:mutations    # healthy control plus four deliberately faulty installer variants
+npm run test:performance  # opt-in: existing k6, loopback-only failure probes
+npm run test:runtime      # opt-in: installs pinned test tools into a temporary project
+```
+
+The runtime check downloads a browser when needed, probes both MCP servers, navigates a local page, and runs Playwright/axe/visual/keyboard/cleanup and BDD fixtures. To use installed Chrome, set `QA_BROWSER_CHANNEL=chrome`. It prints the temporary artifact directory containing `evidence.json` and test output. Tests exercise known failures as well as healthy behavior. They do not measure an LLM judge, execute a production load test, or establish that every agent performs well on arbitrary applications.
+
+The Quality workflow runs offline checks on Node 18/20/22/24 across Linux/macOS/Windows and the browser fixture on Linux. Repository branch-protection settings must separately make the desired jobs required. See [validation scope and results](docs/validation-2026-10-06.md) for what was actually executed locally.
